@@ -1,0 +1,9 @@
+dist/*
+output/*
+*.pyc
+
+config.json
+history.json
+
+Grsai-Banana.7z
+grsai提示教程.md
