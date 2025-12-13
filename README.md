@@ -1,6 +1,6 @@
 # Grsai Banana Image Generator
 
-一个基于 PyQt5 和 Fluent-Widgets 构建的 Windows 桌面客户端，专为国产中转网站 [Grsai](https://grsai.com/zh/) 的 `Banana` 图像生成模型设计。
+一个基于 PySide6 和 Fluent-Widgets 构建的 Windows 桌面客户端，专为国产中转网站 [Grsai](https://grsai.com/zh/) 的 `Banana` 图像生成模型设计。
 
 ![](https://raw.githubusercontent.com/Moeary/pic_bed/main/img/202512121249034.png)
 

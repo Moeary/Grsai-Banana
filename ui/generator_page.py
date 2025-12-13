@@ -1,8 +1,8 @@
 import os
 import base64
-from PyQt5.QtCore import Qt, pyqtSignal, QThread, QUrl, QSize
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDialog, QFrame, QSizePolicy, QToolButton, QScrollArea
-from PyQt5.QtGui import QPixmap, QDragEnterEvent, QDropEvent, QImage, QIcon
+from PySide6.QtCore import Qt, Signal, QThread, QUrl, QSize
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDialog, QFrame, QSizePolicy, QToolButton, QScrollArea
+from PySide6.QtGui import QPixmap, QDragEnterEvent, QDropEvent, QImage, QIcon
 from qfluentwidgets import (CardWidget, PrimaryPushButton, ComboBox, TextEdit, 
                             ImageLabel, StrongBodyLabel, CaptionLabel, InfoBar, InfoBarPosition, FluentIcon, TransparentToolButton)
 
@@ -11,7 +11,7 @@ from core.api_client import api
 from core.history_manager import history_mgr
 
 class ImageThumbnail(QWidget):
-    removed = pyqtSignal(str)
+    removed = Signal(str)
 
     def __init__(self, path, parent=None):
         super().__init__(parent)
@@ -43,7 +43,7 @@ class ImageThumbnail(QWidget):
         self.removed.emit(self.path)
 
 class ImageDropArea(QFrame):
-    imageDropped = pyqtSignal(str)
+    imageDropped = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -448,7 +448,7 @@ class GeneratorPage(QWidget):
             InfoBar.error(title="Failed", content=msg, parent=self, position=InfoBarPosition.TOP_RIGHT)
 
 class SubmitTaskThread(QThread):
-    finished = pyqtSignal(dict)
+    finished = Signal(dict)
 
     def __init__(self, prompt, model, ratio, size, ref_urls):
         super().__init__()
@@ -463,8 +463,8 @@ class SubmitTaskThread(QThread):
         self.finished.emit(res)
 
 class PollTaskThread(QThread):
-    update_signal = pyqtSignal(int, str)
-    finished_signal = pyqtSignal(str, bool, str, str)
+    update_signal = Signal(int, str)
+    finished_signal = Signal(str, bool, str, str)
 
     def __init__(self, task_id):
         super().__init__()
@@ -540,5 +540,5 @@ class PollTaskThread(QThread):
 
             time.sleep(2)
 
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from datetime import datetime

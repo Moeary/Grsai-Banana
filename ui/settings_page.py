@@ -1,5 +1,5 @@
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QFileDialog
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QFileDialog
 from qfluentwidgets import (ScrollArea, SettingCardGroup, LineEdit, PushSettingCard, 
                             FluentIcon, InfoBar, InfoBarPosition, PrimaryPushButton)
 

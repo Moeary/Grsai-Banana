@@ -1,0 +1,30 @@
+[workspace]
+authors = ["Moeary"]
+channels = ["conda-forge"]
+name = "Grsai-Banana"
+platforms = ["win-64"]
+version = "0.1.0"
+
+[tasks]
+start = "python main.py"
+build = """
+nuitka 
+--standalone 
+--onefile 
+--enable-plugin=pyside6 
+--windows-icon-from-ico=logo.ico 
+--include-data-file=logo.ico=logo.ico 
+--output-dir=dist 
+--remove-output
+main.py
+"""
+
+[dependencies]
+python = "3.11.*"
+requests = ">=2.32.5,<3"
+zstandard = ">=0.25.0,<0.26"
+nuitka = ">=2.8.9,<3"
+pyside6 = "==6.6.2"
+
+[pypi-dependencies]
+pyside6-fluent-widgets = ">=1.10.2, <2"

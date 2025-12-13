@@ -1,7 +1,7 @@
 import os
-from PyQt5.QtCore import Qt, QSize, pyqtSignal, QUrl
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QFrame, QDialog, QTextBrowser
-from PyQt5.QtGui import QPixmap, QDesktopServices, QIcon, QFontMetrics, QImageReader
+from PySide6.QtCore import Qt, QSize, Signal, QUrl
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QFrame, QDialog, QTextBrowser
+from PySide6.QtGui import QPixmap, QDesktopServices, QIcon, QFontMetrics, QImageReader
 from qfluentwidgets import (CardWidget, StrongBodyLabel, BodyLabel, CaptionLabel, 
                             TransparentPushButton, FluentIcon, ImageLabel, ScrollArea, MessageBoxBase, SubtitleLabel)
 
@@ -43,12 +43,12 @@ class TaskDetailsDialog(MessageBoxBase):
         self.widget.setMinimumWidth(500)
 
 class ClickableLabel(QLabel):
-    clicked = pyqtSignal()
+    clicked = Signal()
     def mousePressEvent(self, event):
         self.clicked.emit()
 
 class HistoryItem(CardWidget):
-    regenerateRequested = pyqtSignal(dict)
+    regenerateRequested = Signal(dict)
 
     def __init__(self, task_data, parent=None):
         super().__init__(parent)
@@ -157,7 +157,7 @@ class HistoryItem(CardWidget):
             folder = os.path.dirname(self.task_data["result_path"])
             QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
             
-from PyQt5.QtCore import QUrl
+from PySide6.QtCore import QUrl
 
 class HistoryPage(QWidget):
     def __init__(self):

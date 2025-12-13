@@ -7,3 +7,7 @@ history.json
 
 Grsai-Banana.7z
 grsai提示教程.md
+
+# pixi environments
+.pixi/*
+!.pixi/config.toml

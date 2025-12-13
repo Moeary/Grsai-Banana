@@ -1,13 +1,13 @@
 import sys
 import os
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import Qt
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QIcon
+from PySide6.QtCore import Qt
 
 # Enable High DPI support
-QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
-QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
-
+# PySide6 handles High DPI automatically in most cases, but explicit attributes can still be set if needed.
+# QApplication.setAttribute(Qt.AA_EnableHighDpiScaling) # Not needed in PySide6
+# QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps) # Not needed in PySide6
 from ui.main_window import MainWindow
 
 if __name__ == '__main__':
@@ -19,4 +19,4 @@ if __name__ == '__main__':
         
     w = MainWindow()
     w.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
