@@ -1,544 +1,381 @@
 import os
-import base64
-from PySide6.QtCore import Qt, Signal, QThread, QUrl, QSize
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDialog, QFrame, QSizePolicy, QToolButton, QScrollArea
-from PySide6.QtGui import QPixmap, QDragEnterEvent, QDropEvent, QImage, QIcon
-from qfluentwidgets import (CardWidget, PrimaryPushButton, ComboBox, TextEdit, 
-                            ImageLabel, StrongBodyLabel, CaptionLabel, InfoBar, InfoBarPosition, FluentIcon, TransparentToolButton)
+from datetime import datetime
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QScrollArea, QApplication)
+from qfluentwidgets import (CardWidget, PrimaryPushButton, ComboBox, CaptionLabel, 
+                            InfoBar, InfoBarPosition, SegmentedWidget, CheckBox, Slider,
+                            TransparentToolButton, FluentIcon, StrongBodyLabel, BodyLabel, isDarkTheme, qconfig)
 
 from core.config import cfg
-from core.api_client import api
-from core.history_manager import history_mgr
-
-class ImageThumbnail(QWidget):
-    removed = Signal(str)
-
-    def __init__(self, path, parent=None):
-        super().__init__(parent)
-        self.path = path
-        self.setFixedSize(100, 100)
-        
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0,0,0,0)
-        
-        self.img_label = QLabel()
-        self.img_label.setScaledContents(True)
-        self.img_label.setStyleSheet("border-radius: 8px; border: 1px solid #ddd;")
-        
-        pixmap = QPixmap(path)
-        if not pixmap.isNull():
-             # Crop center or just scale? Scale keeping aspect ratio by expanding then crop is better but complex.
-             # Simple scale for now
-             self.img_label.setPixmap(pixmap)
-        
-        layout.addWidget(self.img_label)
-        
-        # Close button overlay
-        self.close_btn = TransparentToolButton(FluentIcon.CLOSE, self)
-        self.close_btn.setFixedSize(24, 24)
-        self.close_btn.move(72, 4)
-        self.close_btn.clicked.connect(self.on_remove)
-        
-    def on_remove(self):
-        self.removed.emit(self.path)
-
-class ImageDropArea(QFrame):
-    imageDropped = Signal(str)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setAcceptDrops(True)
-        self.setFrameStyle(QFrame.StyledPanel | QFrame.Sunken)
-        self.setStyleSheet("QFrame { border: 2px dashed #aaa; border-radius: 10px; background-color: transparent; }")
-        
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Container for content
-        self.content_widget = QWidget(self)
-        self.content_layout = QVBoxLayout(self.content_widget)
-        self.content_layout.setAlignment(Qt.AlignCenter)
-        
-        self.label = QLabel("Drag & Drop Images Here\n(Max 13)\nOr Click to Select\n(Ctrl+V to Paste)")
-        self.label.setAlignment(Qt.AlignCenter)
-        self.content_layout.addWidget(self.label)
-        
-        # Scroll Area for thumbnails
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setStyleSheet("background: transparent; border: none;")
-        self.scroll_area.setFixedHeight(120)
-        self.scroll_area.hide()
-        
-        self.scroll_content = QWidget()
-        self.scroll_content.setStyleSheet("background: transparent;")
-        self.scroll_layout = QHBoxLayout(self.scroll_content)
-        self.scroll_layout.setAlignment(Qt.AlignLeft)
-        self.scroll_layout.setContentsMargins(10, 5, 10, 5)
-        self.scroll_layout.setSpacing(10)
-        
-        self.scroll_area.setWidget(self.scroll_content)
-        self.content_layout.addWidget(self.scroll_area)
-        
-        self.layout.addWidget(self.content_widget)
-        
-        # Clear All button (top right)
-        self.clear_btn = TransparentToolButton(FluentIcon.DELETE, self)
-        self.clear_btn.setFixedSize(30, 30)
-        self.clear_btn.setToolTip("Clear All Images")
-        self.clear_btn.move(self.width() - 35, 5)
-        self.clear_btn.clicked.connect(self.clear_images)
-        self.clear_btn.hide()
-        
-        # Paste button (bottom right)
-        self.paste_btn = TransparentToolButton(FluentIcon.PASTE, self)
-        self.paste_btn.setFixedSize(30, 30)
-        self.paste_btn.setToolTip("Paste from Clipboard")
-        self.paste_btn.clicked.connect(self.paste_from_clipboard)
-        
-        self.image_paths = []
-
-    def resizeEvent(self, event):
-        self.clear_btn.move(self.width() - 35, 5)
-        self.paste_btn.move(self.width() - 35, self.height() - 35)
-        super().resizeEvent(event)
-
-    def paste_from_clipboard(self):
-        clipboard = QApplication.clipboard()
-        mime_data = clipboard.mimeData()
-        
-        if mime_data.hasImage():
-            image = clipboard.image()
-            if not image.isNull():
-                import tempfile
-                from datetime import datetime
-                temp_dir = tempfile.gettempdir()
-                temp_path = os.path.join(temp_dir, f"paste_image_{int(datetime.now().timestamp())}.png")
-                image.save(temp_path, "PNG")
-                self.add_image(temp_path)
-                InfoBar.success(title="Pasted", content="Image pasted from clipboard.", parent=self, position=InfoBarPosition.TOP_RIGHT)
-                return
-
-        if mime_data.hasUrls():
-            for url in mime_data.urls():
-                path = url.toLocalFile()
-                if path.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
-                    self.add_image(path)
-            InfoBar.success(title="Pasted", content="Image file(s) pasted from clipboard.", parent=self, position=InfoBarPosition.TOP_RIGHT)
-            return
-        
-        InfoBar.warning(title="No Image", content="No image found in clipboard.", parent=self, position=InfoBarPosition.TOP_RIGHT)
-
-    def dragEnterEvent(self, event: QDragEnterEvent):
-        if event.mimeData().hasUrls() or event.mimeData().hasImage():
-            event.accept()
-        else:
-            event.ignore()
-
-    def dropEvent(self, event: QDropEvent):
-        if event.mimeData().hasUrls():
-            for url in event.mimeData().urls():
-                path = url.toLocalFile()
-                if path.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
-                    self.add_image(path)
-        elif event.mimeData().hasImage():
-            # Handle raw image data if needed
-            pass
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            # If clicking on empty space, open dialog
-            # But we have thumbnails now, so we need to be careful not to block them?
-            # The thumbnails are in scroll_area which is a child.
-            # If we click on the frame but not on a child widget...
-            # Actually QScrollArea will handle its own clicks.
-            
-            fnames, _ = QFileDialog.getOpenFileNames(self, 'Open files', '', "Image files (*.jpg *.jpeg *.png *.webp)")
-            if fnames:
-                for fname in fnames:
-                    self.add_image(fname)
-
-    def add_image(self, path):
-        if len(self.image_paths) >= 13:
-            InfoBar.warning(title="Limit Reached", content="Maximum 13 images allowed.", parent=self, position=InfoBarPosition.TOP_RIGHT)
-            return
-            
-        if path in self.image_paths:
-             return
-
-        self.image_paths.append(path)
-        thumb = ImageThumbnail(path)
-        thumb.removed.connect(self.remove_image)
-        self.scroll_layout.addWidget(thumb)
-        self.update_ui_state()
-        self.imageDropped.emit(path)
-
-    def remove_image(self, path):
-        if path in self.image_paths:
-            self.image_paths.remove(path)
-            # Find widget and remove
-            for i in range(self.scroll_layout.count()):
-                item = self.scroll_layout.itemAt(i)
-                widget = item.widget()
-                if isinstance(widget, ImageThumbnail) and widget.path == path:
-                    widget.deleteLater()
-                    break
-            self.update_ui_state()
-
-    def clear_images(self):
-        self.image_paths = []
-        # Clear widgets
-        while self.scroll_layout.count():
-            item = self.scroll_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        self.update_ui_state()
-        self.imageDropped.emit("")
-
-    def update_ui_state(self):
-        if self.image_paths:
-            self.label.hide()
-            self.scroll_area.show()
-            self.clear_btn.show()
-            self.clear_btn.raise_()
-        else:
-            self.label.show()
-            self.scroll_area.hide()
-            self.clear_btn.hide()
-
-class AspectRatioLabel(QLabel):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setAlignment(Qt.AlignCenter)
-        self.setStyleSheet("background-color: #f0f0f0; border: 1px solid #ddd; border-radius: 8px;")
-        self._pixmap = None
-
-    def setImage(self, path):
-        if path and os.path.exists(path):
-            self._pixmap = QPixmap(path)
-            self.update_pixmap()
-        else:
-            self._pixmap = None
-            self.clear()
-
-    def resizeEvent(self, event):
-        self.update_pixmap()
-        super().resizeEvent(event)
-
-    def update_pixmap(self):
-        if self._pixmap and not self._pixmap.isNull():
-            # Scale pixmap to fit the label size, keeping aspect ratio
-            # Use a slightly smaller size to ensure borders are visible
-            target_size = self.size() - QSize(4, 4) 
-            scaled = self._pixmap.scaled(target_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            super().setPixmap(scaled)
+from core.task_manager import task_manager
+from ui.components.prompt_widget import PromptWidget
+from ui.components.image_drop_area import ImageDropArea
+from ui.components.task_widget import TaskWidget, TaskListWidget
 
 class GeneratorPage(QWidget):
     def __init__(self):
         super().__init__()
         self.setObjectName("GeneratorPage")
+        self.task_counter = 0
         self.initUI()
 
     def initUI(self):
         main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(20)
         
-        # Left Side - Controls
+        # Left Side (2/3 width)
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(15)
         
-        # Image Upload
-        self.drop_area = ImageDropArea()
-        self.drop_area.setFixedHeight(200)
-        left_layout.addWidget(StrongBodyLabel("Reference Image (Optional)"))
-        left_layout.addWidget(self.drop_area)
-
-        # Prompt
-        left_layout.addWidget(StrongBodyLabel("Prompt"))
-        self.prompt_edit = TextEdit()
-        self.prompt_edit.setPlaceholderText("Enter your prompt here...")
-        self.prompt_edit.setFixedHeight(100)
-        left_layout.addWidget(self.prompt_edit)
-
-        # Settings
-        settings_card = CardWidget()
-        settings_layout = QVBoxLayout(settings_card)
+        # --- Top Section: Tabs & Settings ---
+        settings_container = QWidget()
+        settings_layout_v = QVBoxLayout(settings_container)
+        settings_layout_v.setContentsMargins(0, 0, 0, 0)
+        settings_layout_v.setSpacing(10)
         
-        # Model
-        settings_layout.addWidget(CaptionLabel("Model"))
+        # 1. Tabs
+        self.model_tabs = SegmentedWidget()
+        self.model_tabs.addItem("Banana 1", "Banana 1")
+        self.model_tabs.addItem("Banana Pro", "Banana Pro")
+        self.model_tabs.addItem("GPT Image", "GPT Image")
+        
+        # Load last selected tab or default
+        last_tab = cfg.get("last_tab", "Banana 1")
+        if last_tab in ["Banana 1", "Banana Pro", "GPT Image"]:
+            self.model_tabs.setCurrentItem(last_tab)
+        else:
+            self.model_tabs.setCurrentItem("Banana 1")
+            
+        self.model_tabs.currentItemChanged.connect(self.on_tab_changed)
+        settings_layout_v.addWidget(self.model_tabs)
+        
+        # 2. Settings Card
+        self.settings_card = CardWidget()
+        # Unify card background color
+        self.update_card_style(self.settings_card)
+        qconfig.themeChanged.connect(lambda: self.update_card_style(self.settings_card))
+        settings_inner = QVBoxLayout(self.settings_card)
+        
+        # Model Selector (Specific to tab)
+        settings_inner.addWidget(CaptionLabel("Model"))
         self.model_combo = ComboBox()
-        self.model_combo.addItems(["nano-banana-fast", "nano-banana", "nano-banana-pro"])
-        self.model_combo.setCurrentText(cfg.get("last_model"))
-        settings_layout.addWidget(self.model_combo)
+        self.model_combo.currentTextChanged.connect(self.on_model_changed)
+        settings_inner.addWidget(self.model_combo)
 
-        # Aspect Ratio
-        settings_layout.addWidget(CaptionLabel("Aspect Ratio"))
+        # Aspect Ratio (Banana)
+        self.ratio_label = CaptionLabel("Aspect Ratio")
+        settings_inner.addWidget(self.ratio_label)
         self.ratio_combo = ComboBox()
         self.ratio_combo.addItems(["auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "5:4", "4:5", "21:9"])
-        self.ratio_combo.setCurrentText(cfg.get("last_aspect_ratio"))
-        settings_layout.addWidget(self.ratio_combo)
+        self.ratio_combo.setCurrentText(cfg.get("nano_banana_aspect_ratio", "auto"))
+        settings_inner.addWidget(self.ratio_combo)
 
-        # Image Size
-        settings_layout.addWidget(CaptionLabel("Image Size"))
+        # Image Size (Banana Pro)
+        self.size_label = CaptionLabel("Image Size")
+        settings_inner.addWidget(self.size_label)
         self.size_combo = ComboBox()
         self.size_combo.addItems(["1K", "2K", "4K"])
-        self.size_combo.setCurrentText(cfg.get("last_image_size"))
-        settings_layout.addWidget(self.size_combo)
+        self.size_combo.setCurrentText(cfg.get("nano_banana_image_size", "1K"))
+        settings_inner.addWidget(self.size_combo)
+        
+        # Variants (GPT)
+        self.variants_label = CaptionLabel("Variants")
+        settings_inner.addWidget(self.variants_label)
+        self.variants_combo = ComboBox()
+        self.variants_combo.addItems(["1", "2"])
+        self.variants_combo.setCurrentText("1")
+        settings_inner.addWidget(self.variants_combo)
 
-        left_layout.addWidget(settings_card)
-
-        # Generate Button
+        # Size (GPT)
+        self.gpt_size_label = CaptionLabel("Image Size (GPT/Sora)")
+        settings_inner.addWidget(self.gpt_size_label)
+        self.gpt_size_combo = ComboBox()
+        self.gpt_size_combo.addItems(["auto", "1:1", "3:2", "2:3"])
+        self.gpt_size_combo.setCurrentText(cfg.get("gpt_image_size", "auto"))
+        settings_inner.addWidget(self.gpt_size_combo)
+        
+        # Auto Retry and Parallel Tasks
+        retry_parallel_layout = QHBoxLayout()
+        
+        self.auto_retry_cb = CheckBox("Auto Retry on Failure")
+        self.auto_retry_cb.setChecked(cfg.get("auto_retry_on_failure", False))
+        retry_parallel_layout.addWidget(self.auto_retry_cb)
+        
+        retry_parallel_layout.addStretch()
+        
+        parallel_label = BodyLabel("Parallel Tasks (1-10):")
+        retry_parallel_layout.addWidget(parallel_label)
+        
+        self.parallel_slider = Slider(Qt.Horizontal)
+        self.parallel_slider.setMinimum(1)
+        self.parallel_slider.setMaximum(10)
+        self.parallel_slider.setValue(cfg.get("parallel_tasks", 1))
+        self.parallel_slider.setFixedWidth(200)
+        self.parallel_slider.setTickPosition(Slider.TicksBelow)
+        self.parallel_slider.setTickInterval(1)
+        retry_parallel_layout.addWidget(self.parallel_slider)
+        
+        self.parallel_value_label = QLabel(str(cfg.get("parallel_tasks", 1)))
+        self.parallel_value_label.setFixedWidth(24)
+        self.update_parallel_value_label_color()
+        self.parallel_slider.valueChanged.connect(lambda v: self.parallel_value_label.setText(str(v)))
+        retry_parallel_layout.addWidget(self.parallel_value_label)
+        
+        settings_inner.addLayout(retry_parallel_layout)
+        settings_layout_v.addWidget(self.settings_card)
+        
+        left_layout.addWidget(settings_container)
+        
+        # --- Middle Section: Images & Prompt ---
+        middle_split = QWidget()
+        middle_layout = QHBoxLayout(middle_split)
+        middle_layout.setContentsMargins(0, 0, 0, 0)
+        middle_layout.setSpacing(15)
+        
+        # Image Drop Area with Header
+        img_container = QWidget()
+        img_container_layout = QVBoxLayout(img_container)
+        img_container_layout.setContentsMargins(0, 0, 0, 0)
+        img_container_layout.setSpacing(5)
+        
+        # Image Drop Area Header
+        img_header_layout = QHBoxLayout()
+        img_header_layout.setContentsMargins(0, 0, 0, 0)
+        img_header_layout.addWidget(StrongBodyLabel("Reference Images"))
+        img_header_layout.addStretch()
+        
+        img_paste_btn = TransparentToolButton(FluentIcon.PASTE)
+        img_paste_btn.setToolTip("Paste from clipboard")
+        img_paste_btn.clicked.connect(self.on_image_paste)
+        img_header_layout.addWidget(img_paste_btn)
+        
+        img_clear_btn = TransparentToolButton(FluentIcon.DELETE)
+        img_clear_btn.setToolTip("Clear all images")
+        img_clear_btn.clicked.connect(self.on_image_clear)
+        img_header_layout.addWidget(img_clear_btn)
+        
+        img_container_layout.addLayout(img_header_layout)
+        
+        # Image Drop Area
+        self.drop_area = ImageDropArea()
+        self.drop_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        img_container_layout.addWidget(self.drop_area)
+        
+        middle_layout.addWidget(img_container, 1)
+        
+        # Prompt Widget
+        self.prompt_widget = PromptWidget()
+        self.prompt_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        middle_layout.addWidget(self.prompt_widget, 1)
+        
+        left_layout.addWidget(middle_split, 1)
+        
+        # --- Bottom Section: Generate Button ---
         self.gen_btn = PrimaryPushButton("Generate Image")
         self.gen_btn.clicked.connect(self.on_generate)
+        self.gen_btn.setFixedHeight(45)
         left_layout.addWidget(self.gen_btn)
         
-        left_layout.addStretch()
+        main_layout.addWidget(left_panel, 2)
 
-        # Right Side - Preview
+        # Right Side (1/3 width) - Task List
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(10)
         
-        right_layout.addWidget(StrongBodyLabel("Result Image"))
+        # Add a dummy widget to match the tabs spacing
+        self.task_list_tabs_spacer = SegmentedWidget()
+        self.task_list_tabs_spacer.addItem("Task List", "Task List")
+        self.task_list_tabs_spacer.setCurrentItem("Task List")
+        self.task_list_tabs_spacer.setEnabled(False)
+        right_layout.addWidget(self.task_list_tabs_spacer)
         
-        # Use a container for the image to handle resizing better
-        self.image_container = QWidget()
-        self.image_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        container_layout = QVBoxLayout(self.image_container)
-        container_layout.setContentsMargins(0, 0, 0, 0)
+        self.task_list_widget = TaskListWidget()
+        right_layout.addWidget(self.task_list_widget, 1)
         
-        self.preview_label = AspectRatioLabel()
-        self.preview_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-        
-        container_layout.addWidget(self.preview_label)
-        right_layout.addWidget(self.image_container, 1) # Give it stretch factor
-        
-        self.status_label = CaptionLabel("Ready")
-        self.status_label.setAlignment(Qt.AlignCenter)
-        right_layout.addWidget(self.status_label)
-        
-        # Splitter approach might be better but let's try adjusting stretch factors first
-        # Left panel fixed width or max width?
-        left_panel.setMaximumWidth(400)
-        
-        main_layout.addWidget(left_panel)
         main_layout.addWidget(right_panel, 1)
+
+        # Initialize state
+        self.on_tab_changed(self.model_tabs.currentItem().text())
 
     def keyPressEvent(self, event):
         if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_V:
             clipboard = QApplication.clipboard()
             mime_data = clipboard.mimeData()
-            if mime_data.hasImage():
-                image = clipboard.image()
-                if not image.isNull():
-                    # Save to a temporary file
-                    import tempfile
-                    temp_dir = tempfile.gettempdir()
-                    temp_path = os.path.join(temp_dir, f"paste_image_{int(datetime.now().timestamp())}.png")
-                    image.save(temp_path, "PNG")
-                    self.drop_area.add_image(temp_path)
-                    InfoBar.success(title="Pasted", content="Image pasted from clipboard.", parent=self, position=InfoBarPosition.TOP_RIGHT)
-            elif mime_data.hasUrls():
-                # Handle file copy-paste
-                for url in mime_data.urls():
-                    path = url.toLocalFile()
-                    if path.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
-                        self.drop_area.add_image(path)
-                        break
+            if mime_data.hasImage() or mime_data.hasUrls():
+                self.drop_area.paste_from_clipboard()
+
+    def update_parallel_value_label_color(self):
+        """Update the color of the parallel value label based on theme"""
+        if isDarkTheme():
+            self.parallel_value_label.setStyleSheet("color: #ffffff;")
+        else:
+            self.parallel_value_label.setStyleSheet("color: #000000;")
+
+    def update_card_style(self, card_widget):
+        """Unify card background color for both light and dark themes"""
+        if isDarkTheme():
+            bg_color = "rgba(255, 255, 255, 0.06)"
+        else:
+            bg_color = "rgb(255, 255, 255)"
+        card_widget.setStyleSheet(f"CardWidget {{ background-color: {bg_color}; }}")
+
+    def on_tab_changed(self, tab_name):
+        cfg.set("last_tab", tab_name)
+        
+        self.model_combo.blockSignals(True)
+        self.model_combo.clear()
+        
+        if tab_name == "Banana 1":
+            self.model_combo.addItems(["nano-banana-fast", "nano-banana"])
+        elif tab_name == "Banana Pro":
+            self.model_combo.addItems(["nano-banana-pro", "nano-banana-pro-vt"])
+        elif tab_name == "GPT Image":
+            self.model_combo.addItems(["gpt-image-1.5", "sora-image"])
+            
+        # Restore last selected model for this tab if possible, or default
+        last_model = cfg.get(f"last_model_{tab_name}", self.model_combo.itemText(0))
+        if self.model_combo.findText(last_model) >= 0:
+            self.model_combo.setCurrentText(last_model)
+        
+        self.model_combo.blockSignals(False)
+        self.on_model_changed(self.model_combo.currentText())
+
+    def on_model_changed(self, model_name):
+        if not model_name: return
+        
+        tab_name = self.model_tabs.currentItem().text()
+        cfg.set(f"last_model_{tab_name}", model_name)
+        
+        # Visibility Logic
+        is_banana = tab_name in ["Banana 1", "Banana 1"] # Typo fix: Banana 1 or Banana Pro
+        is_banana = tab_name in ["Banana 1", "Banana Pro"]
+        is_gpt = tab_name == "GPT Image"
+        is_pro = tab_name == "Banana Pro"
+        
+        self.ratio_label.setVisible(is_banana)
+        self.ratio_combo.setVisible(is_banana)
+        
+        self.size_label.setVisible(is_pro)
+        self.size_combo.setVisible(is_pro)
+        
+        self.variants_label.setVisible(is_gpt)
+        self.variants_combo.setVisible(is_gpt)
+        
+        # GPT Image 1.5 specific
+        is_gpt_1_5 = model_name == "gpt-image-1.5"
+        self.gpt_size_label.setVisible(is_gpt_1_5)
+        self.gpt_size_combo.setVisible(is_gpt_1_5)
+
+    def update_text_formatting(self):
+        self.prompt_widget.update_text_formatting()
 
     def on_generate(self):
-        prompt = self.prompt_edit.toPlainText().strip()
+        prompt = self.prompt_widget.get_prompt()
         if not prompt:
             InfoBar.warning(title="Warning", content="Please enter a prompt.", parent=self, position=InfoBarPosition.TOP_RIGHT)
             return
 
         model = self.model_combo.currentText()
-        ratio = self.ratio_combo.currentText()
-        size = self.size_combo.currentText()
+        tab_name = self.model_tabs.currentItem().text()
         
-        # Save settings
-        cfg.set("last_model", model)
-        cfg.set("last_aspect_ratio", ratio)
-        cfg.set("last_image_size", size)
+        # Get params based on active tab/model
+        ratio = "auto"
+        size = "1K"
+        variants = 1
+        
+        if tab_name in ["Banana 1", "Banana Pro"]:
+            ratio = self.ratio_combo.currentText()
+            cfg.set("nano_banana_aspect_ratio", ratio)
+            if tab_name == "Banana Pro":
+                size = self.size_combo.currentText()
+                cfg.set("nano_banana_image_size", size)
+        elif tab_name == "GPT Image":
+            variants = int(self.variants_combo.currentText())
+            if model == "gpt-image-1.5":
+                size = self.gpt_size_combo.currentText()
+                cfg.set("gpt_image_size", size)
 
-        # Handle Images
+        parallel_count = self.parallel_slider.value()
+        
+        cfg.set("auto_retry_on_failure", self.auto_retry_cb.isChecked())
+        cfg.set("parallel_tasks", parallel_count)
+        
         ref_urls = []
-        # self.drop_area.image_paths is a list now
         for img_path in self.drop_area.image_paths:
-            try:
-                with open(img_path, "rb") as img_file:
-                    b64_string = base64.b64encode(img_file.read()).decode('utf-8')
-                    # Guess mime type
-                    ext = os.path.splitext(img_path)[1].lower().replace('.', '')
-                    if ext == 'jpg': ext = 'jpeg'
-                    data_uri = f"data:image/{ext};base64,{b64_string}"
-                    ref_urls.append(data_uri)
-            except Exception as e:
-                print(f"Error processing image {img_path}: {e}")
+            if os.path.isfile(img_path):
+                ref_urls.append(img_path)
 
-        # Submit Task
-        self.gen_btn.setEnabled(False)
-        self.status_label.setText("Submitting task...")
+        params = {
+            "model": model,
+            "ratio": ratio,
+            "size": size,
+            "ref_urls": ref_urls,
+            "variants": variants
+        }
         
-        # Run in background to avoid freezing UI
-        self.submit_thread = SubmitTaskThread(prompt, model, ratio, size, ref_urls)
-        self.submit_thread.finished.connect(self.on_submit_finished)
-        self.submit_thread.start()
-        
-        # Keep track of background threads
-        if not hasattr(self, 'background_threads'):
-            self.background_threads = []
+        for _ in range(parallel_count):
+            self.create_task(prompt, params)
 
-    def on_submit_finished(self, result):
-        self.gen_btn.setEnabled(True)
-        if result.get("code") == 0:
-            task_id = result["data"]["id"]
-            InfoBar.success(title="Success", content="Task submitted successfully.", parent=self, position=InfoBarPosition.TOP_RIGHT)
-            self.status_label.setText(f"Task ID: {task_id} - Waiting for results...")
-            
-            # Add to history
-            # Pass the list of paths
-            history_mgr.add_task(
-                task_id, 
-                self.prompt_edit.toPlainText(), 
-                self.model_combo.currentText(),
-                self.ratio_combo.currentText(),
-                self.size_combo.currentText(),
-                self.drop_area.image_paths
+    def create_task(self, prompt, params):
+        self.task_counter += 1
+        task_widget = TaskWidget(self.task_counter, prompt, params)
+        task_widget.auto_retry = self.auto_retry_cb.isChecked()
+        task_widget.retry_requested.connect(self.retry_task)
+        task_widget.regenerate_requested.connect(self.regenerate_task)
+        
+        self.task_list_widget.add_task(task_widget)
+        self.start_worker(task_widget)
+
+    def start_worker(self, task_widget):
+        try:
+            variants = task_widget.params.get("variants", 1)
+            worker = task_manager.create_worker(
+                task_widget.prompt, 
+                task_widget.params["model"], 
+                task_widget.params["ratio"], 
+                task_widget.params["size"], 
+                task_widget.params["ref_urls"],
+                variants=variants
             )
             
-            # If there was a previous polling thread active on the UI, disconnect it from UI updates
-            if hasattr(self, 'current_poll_thread') and self.current_poll_thread.isRunning():
-                try:
-                    self.current_poll_thread.update_signal.disconnect(self.on_poll_update)
-                    self.current_poll_thread.finished_signal.disconnect(self.on_poll_finished)
-                except:
-                    pass
+            task_widget.progress_ring.show()
+            task_widget.progress_ring.setValue(0)
+            task_widget.status_label.setText(f"Attempt {task_widget.attempt_count + 1}: Starting...")
             
-            # Start polling for this specific task
-            self.current_poll_thread = PollTaskThread(task_id)
-            self.current_poll_thread.update_signal.connect(self.on_poll_update)
-            self.current_poll_thread.finished_signal.connect(self.on_poll_finished)
+            worker.progress_signal.connect(task_widget.update_progress)
+            worker.finished_signal.connect(lambda s, r, m: self.on_worker_finished(task_widget, s, r, m))
+            worker.finished.connect(lambda: self.cleanup_worker(task_widget))
             
-            # Add to background threads to keep reference
-            self.background_threads.append(self.current_poll_thread)
-            
-            # Clean up finished threads from list
-            self.current_poll_thread.finished.connect(lambda: self.cleanup_thread(self.current_poll_thread))
-            
-            self.current_poll_thread.start()
-            
-        else:
-            InfoBar.error(title="Error", content=f"Submission failed: {result.get('msg')}", parent=self, position=InfoBarPosition.TOP_RIGHT)
-            self.status_label.setText("Submission failed.")
+            task_manager.register_worker(task_widget, worker)
+            worker.start()
+        except Exception as e:
+            print(f"[GeneratorPage] Error in start_worker: {e}")
 
-    def cleanup_thread(self, thread):
-        if thread in self.background_threads:
-            self.background_threads.remove(thread)
-
-    def on_poll_update(self, progress, status):
-        self.status_label.setText(f"Status: {status} - Progress: {progress}%")
-
-    def on_poll_finished(self, task_id, success, result_path, msg):
+    def on_worker_finished(self, task_widget, success, result, msg):
         if success:
-            self.status_label.setText("Generation Complete!")
-            self.preview_label.setImage(result_path)
-            InfoBar.success(title="Done", content="Image generated successfully.", parent=self, position=InfoBarPosition.TOP_RIGHT)
+            task_widget.set_success(result)
         else:
-            self.status_label.setText(f"Failed: {msg}")
-            InfoBar.error(title="Failed", content=msg, parent=self, position=InfoBarPosition.TOP_RIGHT)
+            task_widget.set_failed(msg)
 
-class SubmitTaskThread(QThread):
-    finished = Signal(dict)
+    def cleanup_worker(self, task_widget):
+        task_manager.unregister_worker(task_widget)
 
-    def __init__(self, prompt, model, ratio, size, ref_urls):
-        super().__init__()
-        self.prompt = prompt
-        self.model = model
-        self.ratio = ratio
-        self.size = size
-        self.ref_urls = ref_urls
-
-    def run(self):
-        res = api.submit_task(self.prompt, self.model, self.ratio, self.size, self.ref_urls)
-        self.finished.emit(res)
-
-class PollTaskThread(QThread):
-    update_signal = Signal(int, str)
-    finished_signal = Signal(str, bool, str, str)
-
-    def __init__(self, task_id):
-        super().__init__()
-        self.task_id = task_id
-
-    def run(self):
-        import time
-        import requests
-        
-        error_count = 0
-        while True:
-            try:
-                res = api.get_task_result(self.task_id)
-                error_count = 0 # Reset on success
-            except Exception as e:
-                error_count += 1
-                if error_count > 5:
-                    self.finished_signal.emit(self.task_id, False, "", f"Network error: {str(e)}")
-                    return
-                time.sleep(2)
-                continue
-
-            if res.get("code") != 0:
-                # If task not found or other API error, maybe wait a bit or fail
-                if res.get("code") == -22: # Task not found, maybe not ready yet?
-                    time.sleep(2)
-                    continue
-                self.finished_signal.emit(self.task_id, False, "", res.get("msg", "Unknown error"))
-                return
-
-            data = res.get("data", {})
-            status = data.get("status")
-            progress = data.get("progress", 0)
-            
-            self.update_signal.emit(progress, status)
-
-            if status == "succeeded":
-                results = data.get("results", [])
-                if results:
-                    img_url = results[0].get("url")
-                    # Download image
-                    try:
-                        img_data = requests.get(img_url).content
-                        timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-                        ext = "png" # Default
-                        if ".jpg" in img_url: ext = "jpg"
-                        if ".jpeg" in img_url: ext = "jpeg"
-                        
-                        filename = f"{timestamp}.{ext}"
-                        output_dir = cfg.get("output_folder")
-                        if not os.path.exists(output_dir):
-                            os.makedirs(output_dir)
-                            
-                        filepath = os.path.join(output_dir, filename)
-                        with open(filepath, "wb") as f:
-                            f.write(img_data)
-                            
-                        history_mgr.update_task(self.task_id, "succeeded", result_path=filepath, preview_url=img_url)
-                        self.finished_signal.emit(self.task_id, True, filepath, "Success")
-                    except Exception as e:
-                        history_mgr.update_task(self.task_id, "failed", failure_reason=str(e))
-                        self.finished_signal.emit(self.task_id, False, "", str(e))
-                else:
-                    history_mgr.update_task(self.task_id, "failed", failure_reason="No results found")
-                    self.finished_signal.emit(self.task_id, False, "", "No results found")
-                return
-
-            elif status == "failed":
-                reason = data.get("failure_reason", "Unknown")
-                history_mgr.update_task(self.task_id, "failed", failure_reason=reason)
-                self.finished_signal.emit(self.task_id, False, "", reason)
-                return
-
-            time.sleep(2)
-
-from PySide6.QtWidgets import QApplication
-from datetime import datetime
+    def retry_task(self, task_widget):
+        self.start_worker(task_widget)
+    
+    def regenerate_task(self, task_widget):
+        self.create_task(task_widget.prompt, task_widget.params.copy())
+    
+    def on_image_paste(self):
+        self.drop_area.paste_from_clipboard()
+    
+    def on_image_clear(self):
+        self.drop_area.clear_images()
+    
+    def stop_all_workers(self):
+        task_manager.stop_all_workers()

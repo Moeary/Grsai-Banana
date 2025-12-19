@@ -81,7 +81,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstandard-0.25.0-py311hf893f09_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_6.conda
       - pypi: https://files.pythonhosted.org/packages/f2/f2/728f041460f1b9739b85ee23b45fa5a505962ea11fd85bdbe2a02b021373/darkdetect-0.8.0-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/e6/c7/e141fb5dfa7ad9d89bdab1c576e6be425927198af4a4cdbd9e563531e22e/pyside6_fluent_widgets-1.10.2-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/eb/da/cb0da7d13bb733c1876d489d41f0db738f133d187202fd08cbdd7cf0f8d5/pyside6_fluent_widgets-1.10.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/3d/1e/5bfb71bb258d7fe5b6a89197ae1d8b318ea6895ba5e5b2cdabed0956b07d/pysidesix_frameless_window-0.7.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/51/8f/9bb81dd5bb77d22243d33c8397f09377056d5c687aa6d4042bea7fbf8364/pywin32-311-cp311-cp311-win_amd64.whl
 packages:
@@ -770,10 +770,10 @@ packages:
   - pkg:pypi/shiboken6?source=hash-mapping
   size: 19823930
   timestamp: 1708543302188
-- pypi: https://files.pythonhosted.org/packages/e6/c7/e141fb5dfa7ad9d89bdab1c576e6be425927198af4a4cdbd9e563531e22e/pyside6_fluent_widgets-1.10.2-py3-none-any.whl
+- pypi: https://files.pythonhosted.org/packages/eb/da/cb0da7d13bb733c1876d489d41f0db738f133d187202fd08cbdd7cf0f8d5/pyside6_fluent_widgets-1.10.3-py3-none-any.whl
   name: pyside6-fluent-widgets
-  version: 1.10.2
-  sha256: 99e745541bc156cc7abc864d7ca9d230900b30016e7bfa4e92147115a7eea730
+  version: 1.10.3
+  sha256: 8e1fd0f4a886525c2befc581f8cfb3d3d2b2f666159223f633106995506fe80b
   requires_dist:
   - pyside6>=6.4.2
   - pysidesix-frameless-window>=0.4.0

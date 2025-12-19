@@ -38,7 +38,7 @@ class HistoryManager:
         self.save_history()
         return task
 
-    def update_task(self, task_id, status, result_path=None, preview_url=None, failure_reason=None):
+    def update_task(self, task_id, status, result_path=None, preview_url=None, failure_reason=None, error_message=None):
         for task in self.history:
             if task["id"] == task_id:
                 task["status"] = status
@@ -48,6 +48,8 @@ class HistoryManager:
                     task["preview_url"] = preview_url
                 if failure_reason:
                     task["failure_reason"] = failure_reason
+                if error_message:
+                    task["error_message"] = error_message
                 self.save_history()
                 return task
         return None
