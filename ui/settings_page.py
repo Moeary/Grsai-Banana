@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QFileDialog, QLabel, QSpinBox
-from qfluentwidgets import (ScrollArea, SettingCardGroup, LineEdit, PushSettingCard, SettingCard, Slider,
+from qfluentwidgets import (ScrollArea, SettingCardGroup, LineEdit, PushSettingCard, SettingCard, Slider, ComboBox,
                             FluentIcon, InfoBar, InfoBarPosition, PrimaryPushButton, SwitchSettingCard)
 
 from core.config import cfg
@@ -82,6 +82,22 @@ class SettingsPage(ScrollArea):
         self.font_size_card.hBoxLayout.addWidget(self.font_size_slider)
         self.font_size_card.hBoxLayout.addSpacing(16)
         self.format_group.addSettingCard(self.font_size_card)
+        
+        # Font Family
+        self.font_family_card = SettingCard(
+            FluentIcon.FONT,
+            "Font Family",
+            "Select font for formatted text",
+            self.format_group
+        )
+        self.font_family_combo = ComboBox(self.font_family_card)
+        self.font_family_combo.addItems(["Arial", "Courier New", "Times New Roman", "Verdana", "Georgia", "SimSun", "SimHei", "KaiTi"])
+        self.font_family_combo.setCurrentText(cfg.get("text_font_family", "Arial"))
+        self.font_family_combo.setFixedWidth(150)
+        
+        self.font_family_card.hBoxLayout.addWidget(self.font_family_combo)
+        self.font_family_card.hBoxLayout.addSpacing(16)
+        self.format_group.addSettingCard(self.font_family_card)
         
         self.wrap_switch = SwitchSettingCard(
             FluentIcon.ALIGNMENT,
@@ -172,18 +188,16 @@ class SettingsPage(ScrollArea):
         cfg.set("max_retries", self.retries_slider.value())
         cfg.set("text_format_enabled", self.format_switch.isChecked())
         cfg.set("text_font_size", self.font_size_slider.value())
+        cfg.set("text_font_family", self.font_family_combo.currentText())
         cfg.set("text_auto_wrap", self.wrap_switch.isChecked())
         
-        InfoBar.success(
-            title='Settings Saved',
-            content="Configuration has been updated successfully.",
-            orient=Qt.Horizontal,
-            isClosable=True,
-            position=InfoBarPosition.TOP_RIGHT,
-            duration=2000,
-            parent=self
-        )
-        cfg.set("api_key", key)
+        # Apply text formatting to generator page
+        try:
+            main_window = self.window()
+            if hasattr(main_window, 'generator_interface'):
+                main_window.generator_interface.update_text_formatting()
+        except:
+            pass
         
         InfoBar.success(
             title="Saved",

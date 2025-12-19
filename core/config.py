@@ -14,6 +14,7 @@ DEFAULT_CONFIG = {
     "theme": "auto",
     "text_format_enabled": True,
     "text_font_size": 12,
+    "text_font_family": "Arial",
     "text_auto_wrap": True
 }
 

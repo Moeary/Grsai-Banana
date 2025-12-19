@@ -355,14 +355,9 @@ class GeneratorPage(QWidget):
         paste_btn.clicked.connect(self.paste_to_prompt)
         prompt_label_layout.addWidget(paste_btn)
         
-        format_btn = TransparentToolButton(FluentIcon.FONT)
-        format_btn.setToolTip("Apply text formatting")
-        format_btn.clicked.connect(self.apply_prompt_formatting)
-        prompt_label_layout.addWidget(format_btn)
-        
         clear_btn = TransparentToolButton(FluentIcon.DELETE)
         clear_btn.setToolTip("Clear prompt")
-        clear_btn.clicked.connect(lambda: self.prompt_edit.clear())
+        clear_btn.clicked.connect(self.clear_prompt)
         prompt_label_layout.addWidget(clear_btn)
         
         left_layout.addLayout(prompt_label_layout)
@@ -490,26 +485,29 @@ class GeneratorPage(QWidget):
         text = clipboard.text()
         if text:
             self.prompt_edit.insertPlainText(text)
-            self.apply_prompt_formatting()
+            self._apply_text_formatting()
             InfoBar.success(title="Pasted", content="Text pasted to prompt.", parent=self, position=InfoBarPosition.TOP_RIGHT)
 
-    def apply_prompt_formatting(self):
-        """Apply text formatting to prompt_edit"""
-        self._apply_text_formatting()
-        if cfg.get("text_format_enabled", False):
-            InfoBar.success(title="Formatting Applied", content="Text formatting updated.", parent=self, position=InfoBarPosition.TOP_RIGHT)
-        else:
-            InfoBar.warning(title="Formatting Disabled", content="Enable text formatting in settings.", parent=self, position=InfoBarPosition.TOP_RIGHT)
+    def clear_prompt(self):
+        """Clear prompt text and all formatting"""
+        self.prompt_edit.clear()
+        # Reset font to default
+        font = QFont()
+        self.prompt_edit.setFont(font)
+        # Reset text wrap
+        self.prompt_edit.setWordWrapMode(QTextOption.WordWrap)
+        InfoBar.success(title="Cleared", content="Prompt cleared.", parent=self, position=InfoBarPosition.TOP_RIGHT)
 
     def _apply_text_formatting(self):
         """Apply text formatting settings to prompt_edit"""
         if cfg.get("text_format_enabled", False):
             # Get formatting settings
             font_size = cfg.get("text_font_size", 12)
+            font_family = cfg.get("text_font_family", "Arial")
             auto_wrap = cfg.get("text_auto_wrap", True)
             
-            # Apply font size
-            font = QFont()
+            # Apply font with family
+            font = QFont(font_family)
             font.setPointSize(font_size)
             self.prompt_edit.setFont(font)
             
