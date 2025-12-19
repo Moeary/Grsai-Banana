@@ -191,6 +191,27 @@ class SettingsPage(ScrollArea):
         cfg.set("text_font_family", self.font_family_combo.currentText())
         cfg.set("text_auto_wrap", self.wrap_switch.isChecked())
         
+        # Also save current generator settings if available
+        try:
+            main_window = self.window()
+            if hasattr(main_window, 'generator_interface'):
+                gen_page = main_window.generator_interface
+                # Save current model and its parameters
+                model = gen_page.model_combo.currentText()
+                cfg.set("last_model", model)
+                
+                if model.startswith("nano-banana"):
+                    cfg.set("nano_banana_aspect_ratio", gen_page.ratio_combo.currentText())
+                    cfg.set("nano_banana_image_size", gen_page.size_combo.currentText())
+                elif model == "gpt-image-1.5":
+                    cfg.set("gpt_image_size", gen_page.size_combo_gpt.currentText())
+                
+                # Save shared parameters
+                cfg.set("auto_retry_on_failure", gen_page.auto_retry_cb.isChecked())
+                cfg.set("parallel_tasks", gen_page.parallel_spinbox.value())
+        except:
+            pass
+        
         # Apply text formatting to generator page
         try:
             main_window = self.window()

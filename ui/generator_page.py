@@ -2,11 +2,11 @@ import os
 from datetime import datetime
 from PySide6.QtCore import Qt, Signal, QUrl, QSize, QTimer
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDialog, 
-                               QFrame, QSizePolicy, QToolButton, QScrollArea, QApplication, QPlainTextEdit, QStackedWidget)
+                               QFrame, QSizePolicy, QToolButton, QScrollArea, QApplication, QPlainTextEdit, QStackedWidget, QSpinBox)
 from PySide6.QtGui import QPixmap, QDragEnterEvent, QDropEvent, QImage, QIcon, QDesktopServices, QFont, QTextOption
 from qfluentwidgets import (CardWidget, PrimaryPushButton, ComboBox, TextEdit, 
                             ImageLabel, StrongBodyLabel, CaptionLabel, InfoBar, InfoBarPosition, 
-                            FluentIcon, TransparentToolButton, ProgressRing, BodyLabel, CheckBox)
+                            FluentIcon, TransparentToolButton, ProgressRing, BodyLabel, CheckBox, Slider)
 
 from core.config import cfg
 from core.task_manager import task_manager, TaskWorker
@@ -206,6 +206,7 @@ class ImageDropArea(QFrame):
 
 class TaskWidget(QFrame):
     retry_requested = Signal(object)
+    regenerate_requested = Signal(object)  # New signal for regeneration with new task
 
     def __init__(self, index, prompt, params, parent=None):
         super().__init__(parent)
@@ -342,12 +343,8 @@ class TaskWidget(QFrame):
         menu.exec(self.result_btn.mapToGlobal(pos))
 
     def regenerate(self):
-        """Regenerate image with same parameters"""
-        # Reset state to allow new generation
-        self.attempt_count = 0
-        self.retry_count = 0
-        self.update_progress(0, "Regenerating...")
-        self.retry_requested.emit(self)
+        """Regenerate image - create a new independent task with same parameters"""
+        self.regenerate_requested.emit(self)
 
 
 class GeneratorPage(QWidget):
@@ -425,10 +422,34 @@ class GeneratorPage(QWidget):
         self.size_label_widget_gpt.hide()  # Hide label too
         self.size_combo_gpt.hide()  # Hidden by default
         
-        # Auto Retry
+        # Auto Retry and Parallel Tasks (on the same row)
+        retry_parallel_layout = QHBoxLayout()
+        
         self.auto_retry_cb = CheckBox("Auto Retry on Failure")
-        self.auto_retry_cb.setChecked(False)
-        settings_inner.addWidget(self.auto_retry_cb)
+        self.auto_retry_cb.setChecked(cfg.get("auto_retry_on_failure", False))
+        retry_parallel_layout.addWidget(self.auto_retry_cb)
+        
+        retry_parallel_layout.addStretch()
+        
+        parallel_label = CaptionLabel("Parallel Tasks (1-10):")
+        retry_parallel_layout.addWidget(parallel_label)
+        
+        self.parallel_slider = Slider(Qt.Horizontal)
+        self.parallel_slider.setMinimum(1)
+        self.parallel_slider.setMaximum(10)
+        self.parallel_slider.setValue(cfg.get("parallel_tasks", 1))
+        self.parallel_slider.setFixedWidth(300)
+        self.parallel_slider.setTickPosition(Slider.TicksBelow)
+        self.parallel_slider.setTickInterval(1)
+        retry_parallel_layout.addWidget(self.parallel_slider)
+        
+        # Label to show current value
+        self.parallel_value_label = QLabel(str(cfg.get("parallel_tasks", 1)))
+        self.parallel_value_label.setFixedWidth(24)
+        self.parallel_slider.valueChanged.connect(lambda v: self.parallel_value_label.setText(str(v)))
+        retry_parallel_layout.addWidget(self.parallel_value_label)
+        
+        settings_inner.addLayout(retry_parallel_layout)
         
         settings_layout_v.addWidget(settings_card)
         
@@ -559,21 +580,32 @@ class GeneratorPage(QWidget):
         """Update UI based on selected model"""
         is_nano = model_name.startswith("nano-banana")
         is_gpt = model_name in ["gpt-image-1.5", "sora-image"]
-        is_gpt_image = model_name == "gpt-image-1.5"
+        
+        # For nano-banana, only show Image Size for pro and pro-vt models
+        supports_image_size = model_name in ["nano-banana-pro", "nano-banana-pro-vt"]
         
         # Toggle nano-banana specific options
         self.ratio_label_widget.setVisible(is_nano)
         self.ratio_combo.setVisible(is_nano)
-        self.size_label_widget.setVisible(is_nano)
-        self.size_combo.setVisible(is_nano)
+        self.size_label_widget.setVisible(is_nano and supports_image_size)
+        self.size_combo.setVisible(is_nano and supports_image_size)
         
         # Toggle GPT/Sora specific options
         self.variants_label_widget.setVisible(is_gpt)
         self.variants_combo.setVisible(is_gpt)
         
-        # Toggle GPT Image 1.5 size option
+        # Toggle GPT Image 1.5 size option (not for Sora)
+        is_gpt_image = model_name == "gpt-image-1.5"
         self.size_label_widget_gpt.setVisible(is_gpt_image)
         self.size_combo_gpt.setVisible(is_gpt_image)
+        
+        # Load saved parameters for this model type
+        if is_nano:
+            self.ratio_combo.setCurrentText(cfg.get("nano_banana_aspect_ratio", "auto"))
+            if supports_image_size:
+                self.size_combo.setCurrentText(cfg.get("nano_banana_image_size", "1K"))
+        elif is_gpt_image:
+            self.size_combo_gpt.setCurrentText(cfg.get("gpt_image_size", "auto"))
 
     def paste_to_prompt(self):
         """Paste text from clipboard to prompt"""
@@ -630,10 +662,16 @@ class GeneratorPage(QWidget):
         if model == "gpt-image-1.5":
             size = self.size_combo_gpt.currentText()
         variants = int(self.variants_combo.currentText())
+        parallel_count = self.parallel_slider.value()
         
+        # Save last used model and parameters based on model type
         cfg.set("last_model", model)
-        cfg.set("last_aspect_ratio", ratio)
-        cfg.set("last_image_size", size)
+        if model.startswith("nano-banana"):
+            cfg.set("nano_banana_aspect_ratio", ratio)
+            cfg.set("nano_banana_image_size", size)
+        elif model in ["gpt-image-1.5", "sora-image"]:
+            if model == "gpt-image-1.5":
+                cfg.set("gpt_image_size", size)
 
         ref_urls = []
         for img_path in self.drop_area.image_paths:
@@ -652,13 +690,20 @@ class GeneratorPage(QWidget):
             "variants": variants
         }
         
-        self.create_task(prompt, params)
+        # Save auto retry and parallel tasks settings
+        cfg.set("auto_retry_on_failure", self.auto_retry_cb.isChecked())
+        cfg.set("parallel_tasks", parallel_count)
+        
+        # Create parallel tasks
+        for _ in range(parallel_count):
+            self.create_task(prompt, params)
 
     def create_task(self, prompt, params):
         self.task_counter += 1
         task_widget = TaskWidget(self.task_counter, prompt, params)
         task_widget.auto_retry = self.auto_retry_cb.isChecked()
         task_widget.retry_requested.connect(self.retry_task)
+        task_widget.regenerate_requested.connect(self.regenerate_task)
         
         self.task_layout.insertWidget(0, task_widget)
         
@@ -715,6 +760,17 @@ class GeneratorPage(QWidget):
             self.start_worker(task_widget)
         except Exception as e:
             print(f"[GeneratorPage] Error in retry_task: {e}")
+    
+    def regenerate_task(self, task_widget):
+        """Create a new independent task with same parameters from a successful task"""
+        try:
+            prompt = task_widget.prompt
+            params = task_widget.params.copy()
+            # Create a new task with same prompt and parameters
+            # It will inherit auto_retry setting from the current checkbox state
+            self.create_task(prompt, params)
+        except Exception as e:
+            print(f"[GeneratorPage] Error in regenerate_task: {e}")
     
     def stop_all_workers(self):
         """Call from main window on close"""
