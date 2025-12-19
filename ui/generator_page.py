@@ -87,25 +87,9 @@ class ImageDropArea(QFrame):
         
         self.layout.addWidget(self.content_widget)
         
-        # Clear All button (top right)
-        self.clear_btn = TransparentToolButton(FluentIcon.DELETE, self)
-        self.clear_btn.setFixedSize(30, 30)
-        self.clear_btn.setToolTip("Clear All Images")
-        self.clear_btn.move(self.width() - 35, 5)
-        self.clear_btn.clicked.connect(self.clear_images)
-        self.clear_btn.hide()
-        
-        # Paste button (bottom right)
-        self.paste_btn = TransparentToolButton(FluentIcon.PASTE, self)
-        self.paste_btn.setFixedSize(30, 30)
-        self.paste_btn.setToolTip("Paste from Clipboard")
-        self.paste_btn.clicked.connect(self.paste_from_clipboard)
-        
         self.image_paths = []
 
     def resizeEvent(self, event):
-        self.clear_btn.move(self.width() - 35, 5)
-        self.paste_btn.move(self.width() - 35, self.height() - 35)
         super().resizeEvent(event)
 
     def paste_from_clipboard(self):
@@ -196,12 +180,9 @@ class ImageDropArea(QFrame):
         if self.image_paths:
             self.label.hide()
             self.scroll_area.show()
-            self.clear_btn.show()
-            self.clear_btn.raise_()
         else:
             self.label.show()
             self.scroll_area.hide()
-            self.clear_btn.hide()
 
 
 class TaskWidget(QFrame):
