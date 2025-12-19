@@ -16,31 +16,79 @@ class TaskDetailsDialog(MessageBoxBase):
         # Content
         self.content = QTextBrowser()
         self.content.setOpenExternalLinks(True)
-        self.content.setStyleSheet("background-color: transparent; border: none;")
+        self.content.setStyleSheet("background-color: transparent; border: none; padding: 10px;")
         
-        # Format details
+        # Format details with better styling
+        status_color = "green" if task_data['status'] == "succeeded" else "red" if task_data['status'] == "failed" else "orange"
+        
         html = f"""
-        <h3>Prompt</h3>
-        <p>{task_data['prompt']}</p>
+        <style>
+            body {{ font-family: Arial, sans-serif; }}
+            .section {{ margin-bottom: 15px; }}
+            .section-title {{ font-weight: bold; font-size: 12pt; margin-bottom: 5px; color: #0078D4; }}
+            .label {{ font-weight: bold; color: #333; }}
+            .value {{ color: #555; }}
+            .prompt {{ background-color: #f5f5f5; padding: 10px; border-radius: 5px; border-left: 3px solid #0078D4; margin: 5px 0; }}
+            .error {{ color: red; background-color: #ffe0e0; padding: 10px; border-radius: 5px; border-left: 3px solid red; }}
+            .success {{ color: green; }}
+            hr {{ border: none; border-top: 1px solid #ddd; margin: 10px 0; }}
+        </style>
+        
+        <div class="section">
+            <div class="section-title">📝 Prompt</div>
+            <div class="prompt">{task_data['prompt']}</div>
+        </div>
+        
         <hr>
-        <p><b>Model:</b> {task_data['model']}</p>
-        <p><b>Size:</b> {task_data['image_size']}</p>
-        <p><b>Aspect Ratio:</b> {task_data['aspect_ratio']}</p>
-        <p><b>Status:</b> {task_data['status']}</p>
-        <p><b>Created At:</b> {task_data['created_at']}</p>
-        <p><b>Task ID:</b> {task_data['id']}</p>
+        
+        <div class="section">
+            <div class="section-title">⚙️ Configuration</div>
+            <p><span class="label">Model:</span> <span class="value">{task_data['model']}</span></p>
+            <p><span class="label">Size:</span> <span class="value">{task_data['image_size']}</span></p>
+            <p><span class="label">Aspect Ratio:</span> <span class="value">{task_data['aspect_ratio']}</span></p>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">📊 Status</div>
+            <p><span class="label">Status:</span> <span class="value" style="color: {status_color}; font-weight: bold;">{task_data['status'].capitalize()}</span></p>
+            <p><span class="label">Created At:</span> <span class="value">{task_data['created_at']}</span></p>
+            <p><span class="label">Task ID:</span> <span class="value" style="font-family: monospace; font-size: 10pt;">{task_data['id']}</span></p>
+        </div>
         """
-        if task_data.get('failure_reason'):
-            html += f"<p style='color:red'><b>Error:</b> {task_data['failure_reason']}</p>"
+        
+        # Add error information if present
+        if task_data['status'] == "failed":
+            failure_reason = task_data.get('failure_reason', 'Unknown')
+            error_msg = task_data.get('error_message', '')
+            
+            html += f"""
+            <div class="section">
+                <div class="section-title">❌ Error Information</div>
+                <p><span class="label">Failure Reason:</span> <span class="value" style="color: red;">{failure_reason}</span></p>
+            """
+            
+            if error_msg:
+                # Truncate very long error messages for display
+                if len(error_msg) > 500:
+                    html += f"""<p><span class="label">Details:</span></p>
+                    <div class="error">{error_msg[:500]}...</div>
+                    <p style="color: #999; font-size: 9pt;">Error message truncated. Full message available in logs.</p>"""
+                else:
+                    html += f"""<p><span class="label">Details:</span></p>
+                    <div class="error">{error_msg}</div>"""
+            
+            html += "</div>"
             
         self.content.setHtml(html)
-        self.content.setFixedHeight(300)
+        self.content.setFixedHeight(400)
+        self.content.setReadOnly(True)
         
         self.viewLayout.addWidget(self.content)
         
         self.yesButton.setText("Close")
         self.cancelButton.hide()
-        self.widget.setMinimumWidth(500)
+        self.widget.setMinimumWidth(600)
+        self.widget.setMinimumHeight(500)
 
 class ClickableLabel(QLabel):
     clicked = Signal()

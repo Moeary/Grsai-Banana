@@ -1,7 +1,7 @@
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QFileDialog
-from qfluentwidgets import (ScrollArea, SettingCardGroup, LineEdit, PushSettingCard, 
-                            FluentIcon, InfoBar, InfoBarPosition, PrimaryPushButton)
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QFileDialog, QLabel, QSpinBox
+from qfluentwidgets import (ScrollArea, SettingCardGroup, LineEdit, PushSettingCard, SettingCard, Slider,
+                            FluentIcon, InfoBar, InfoBarPosition, PrimaryPushButton, SwitchSettingCard)
 
 from core.config import cfg
 
@@ -22,6 +22,76 @@ class SettingsPage(ScrollArea):
         self.layout = QVBoxLayout(self.container)
         self.layout.setContentsMargins(30, 30, 30, 30)
         self.layout.setSpacing(20)
+
+        # General Settings
+        self.general_group = SettingCardGroup("General Configuration", self.container)
+        
+        self.retries_card = SettingCard(
+            FluentIcon.SYNC,
+            "Max Retries",
+            "Maximum number of auto-retries for failed tasks",
+            self.general_group
+        )
+        
+        self.retries_label = QLabel(str(cfg.get("max_retries", 5)), self.retries_card)
+        self.retries_slider = Slider(Qt.Horizontal, self.retries_card)
+        self.retries_slider.setRange(0, 100)
+        self.retries_slider.setValue(cfg.get("max_retries", 5))
+        self.retries_slider.setFixedWidth(150)
+        
+        self.retries_slider.valueChanged.connect(lambda v: self.retries_label.setText(str(v)))
+        
+        self.retries_card.hBoxLayout.addWidget(self.retries_label)
+        self.retries_card.hBoxLayout.addSpacing(10)
+        self.retries_card.hBoxLayout.addWidget(self.retries_slider)
+        self.retries_card.hBoxLayout.addSpacing(16)
+        
+        self.general_group.addSettingCard(self.retries_card)
+        self.layout.addWidget(self.general_group)
+
+        # Text Format Settings
+        self.format_group = SettingCardGroup("Text Format", self.container)
+        
+        self.format_switch = SwitchSettingCard(
+            FluentIcon.EDIT,
+            "Enable Text Format",
+            "Format prompt text automatically",
+            parent=self.format_group
+        )
+        self.format_switch.setChecked(cfg.get("text_format_enabled", False))
+        self.format_group.addSettingCard(self.format_switch)
+        
+        self.font_size_card = SettingCard(
+            FluentIcon.FONT,
+            "Font Size",
+            "Size of formatted text (8-72)",
+            self.format_group
+        )
+        self.font_size_slider = Slider(Qt.Horizontal, self.font_size_card)
+        self.font_size_slider.setRange(8, 72)
+        self.font_size_slider.setValue(cfg.get("text_font_size", 12))
+        self.font_size_slider.setFixedWidth(150)
+        
+        self.font_size_label = QLabel(str(cfg.get("text_font_size", 12)), self.font_size_card)
+        self.font_size_label.setFixedWidth(30)
+        
+        self.font_size_slider.valueChanged.connect(lambda v: self.font_size_label.setText(str(v)))
+        
+        self.font_size_card.hBoxLayout.addWidget(self.font_size_label)
+        self.font_size_card.hBoxLayout.addSpacing(10)
+        self.font_size_card.hBoxLayout.addWidget(self.font_size_slider)
+        self.font_size_card.hBoxLayout.addSpacing(16)
+        self.format_group.addSettingCard(self.font_size_card)
+        
+        self.wrap_switch = SwitchSettingCard(
+            FluentIcon.ALIGNMENT,
+            "Auto Text Wrap",
+            "Automatically wrap text after formatting",
+            parent=self.format_group
+        )
+        self.wrap_switch.setChecked(cfg.get("text_auto_wrap", True))
+        self.format_group.addSettingCard(self.wrap_switch)
+        self.layout.addWidget(self.format_group)
 
         # API Settings
         self.api_group = SettingCardGroup("API Configuration", self.container)
@@ -98,6 +168,21 @@ class SettingsPage(ScrollArea):
         key = self.key_edit.text().strip()
         
         cfg.set("api_base_url", url)
+        cfg.set("api_key", key)
+        cfg.set("max_retries", self.retries_slider.value())
+        cfg.set("text_format_enabled", self.format_switch.isChecked())
+        cfg.set("text_font_size", self.font_size_slider.value())
+        cfg.set("text_auto_wrap", self.wrap_switch.isChecked())
+        
+        InfoBar.success(
+            title='Settings Saved',
+            content="Configuration has been updated successfully.",
+            orient=Qt.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP_RIGHT,
+            duration=2000,
+            parent=self
+        )
         cfg.set("api_key", key)
         
         InfoBar.success(

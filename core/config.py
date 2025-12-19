@@ -9,7 +9,12 @@ DEFAULT_CONFIG = {
     "output_folder": os.path.join(os.getcwd(), "output"),
     "last_model": "nano-banana-fast",
     "last_aspect_ratio": "auto",
-    "last_image_size": "1K"
+    "last_image_size": "1K",
+    "max_retries": 5,
+    "theme": "auto",
+    "text_format_enabled": True,
+    "text_font_size": 12,
+    "text_auto_wrap": True
 }
 
 class Config:
