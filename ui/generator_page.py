@@ -6,7 +6,8 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileD
 from PySide6.QtGui import QPixmap, QDragEnterEvent, QDropEvent, QImage, QIcon, QDesktopServices, QFont, QTextOption
 from qfluentwidgets import (CardWidget, PrimaryPushButton, ComboBox, TextEdit, 
                             ImageLabel, StrongBodyLabel, CaptionLabel, InfoBar, InfoBarPosition, 
-                            FluentIcon, TransparentToolButton, ProgressRing, BodyLabel, CheckBox, Slider)
+                            FluentIcon, TransparentToolButton, ProgressRing, BodyLabel, CheckBox, Slider,
+                            SingleDirectionScrollArea)
 
 from core.config import cfg
 from core.task_manager import task_manager, TaskWorker
@@ -15,11 +16,22 @@ from core.task_manager import task_manager, TaskWorker
 class ImageThumbnail(QWidget):
     removed = Signal(str)
 
-    def __init__(self, path, parent=None):
-        super().__init__(parent)
+    def __init__(self, path, drop_area=None):
+        super().__init__()
         self.path = path
-        self.setFixedHeight(250)
+        self.drop_area = drop_area  # 保持对 ImageDropArea 的引用
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        
+        # 保存原始图片信息
+        self.image_obj = QImage(path)
+        if not self.image_obj.isNull():
+            self.original_width = self.image_obj.width()
+            self.original_height = self.image_obj.height()
+            self.aspect_ratio = self.original_width / self.original_height if self.original_height > 0 else 1.0
+        else:
+            self.original_width = 400
+            self.original_height = 250
+            self.aspect_ratio = 400 / 250
         
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -27,22 +39,43 @@ class ImageThumbnail(QWidget):
         self.img_label = QLabel()
         self.img_label.setScaledContents(True)
         self.img_label.setStyleSheet("border-radius: 8px; border: 1px solid #ddd;")
-        # 待修改
         
-        self.img_label.setFixedSize(250,250)
-        
+        # Load and set pixmap
         pixmap = QPixmap(path)
         if not pixmap.isNull():
-             self.img_label.setPixmap(pixmap)
+            self.img_label.setPixmap(pixmap)
         
         layout.addWidget(self.img_label)
         layout.addStretch()
         
-        # Close button overlay
+        # Close button overlay at right left
         self.close_btn = TransparentToolButton(FluentIcon.CLOSE, self)
         self.close_btn.setFixedSize(24, 24)
-        self.close_btn.move(72, 4)
+        self.close_btn.move(4, 4)
         self.close_btn.clicked.connect(self.on_remove)
+        
+        # 初始计算大小
+        self.update_size()
+        
+    def update_size(self):
+        """根据 ImageDropArea 的宽度更新图片尺寸"""
+        if self.drop_area and hasattr(self.drop_area, 'width'):
+            # 获取 ImageDropArea 的实际宽度
+            drop_area_width = self.drop_area.width()
+            # 减去外层 padding (左右各10px) 和滚动条宽度(约12px)
+            available_width = drop_area_width - 20 - 12  # 10px左 + 12px 滚动条
+        else:
+            available_width = 368  # 400 - 20 - 12
+        
+        # 计算 img_label 的宽度
+        img_width = max(available_width, 100)  # 最小宽度100px
+        
+        # 根据宽高比计算高度
+        img_height = int(img_width / self.aspect_ratio)
+        
+        # 设置 img_label 的固定宽高
+        self.img_label.setFixedSize(img_width, img_height)
+        self.setFixedHeight(img_height)
         
     def on_remove(self):
         self.removed.emit(self.path)
@@ -57,32 +90,34 @@ class ImageDropArea(QFrame):
         self.setStyleSheet("QFrame { border: 2px dashed #aaa; border-radius: 10px; background-color: transparent; }")
         
         self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setContentsMargins(10, 10, 10, 10)  # 上下左右各10px
         
         # Container for content
         self.content_widget = QWidget(self)
         self.content_layout = QVBoxLayout(self.content_widget)
         self.content_layout.setAlignment(Qt.AlignCenter)
+        self.content_layout.setContentsMargins(0, 0, 0, 0)
         
         self.label = QLabel("Drag & Drop Images Here\n(Max 13)\nOr Click to Select\n(Ctrl+V to Paste)")
         self.label.setAlignment(Qt.AlignCenter)
         self.content_layout.addWidget(self.label)
         
-        # Scroll Area for thumbnails
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setStyleSheet("background: transparent; border: none;")
-        # self.scroll_area.setFixedHeight(120) # Removed fixed height to allow expansion
+        # Scroll Area for thumbnails - 使用 qfluentwidgets 的 SingleDirectionScrollArea
+        self.scroll_area = SingleDirectionScrollArea(orient=Qt.Vertical)
+        self.scroll_area.setWidgetResizable(True)  # 允许widget自动调整大小
         self.scroll_area.hide()
         
         self.scroll_content = QWidget()
-        self.scroll_content.setStyleSheet("background: transparent;")
+        self.scroll_content.setStyleSheet("QWidget { background: transparent; }")
         self.scroll_layout = QVBoxLayout(self.scroll_content)
         self.scroll_layout.setAlignment(Qt.AlignTop)
-        self.scroll_layout.setContentsMargins(10, 5, 10, 5)
+        self.scroll_layout.setContentsMargins(0, 0, 0, 0)  # 移除 scroll_content 的 margin
         self.scroll_layout.setSpacing(10)
         
         self.scroll_area.setWidget(self.scroll_content)
+        # 启用透明背景 (必须在 setWidget 之后调用)
+        self.scroll_area.enableTransparentBackground()
+        
         self.content_layout.addWidget(self.scroll_area)
         
         self.layout.addWidget(self.content_widget)
@@ -91,6 +126,12 @@ class ImageDropArea(QFrame):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        # 当 ImageDropArea 大小变化时，更新所有缩略图的尺寸
+        for i in range(self.scroll_layout.count()):
+            item = self.scroll_layout.itemAt(i)
+            widget = item.widget()
+            if isinstance(widget, ImageThumbnail):
+                widget.update_size()
 
     def paste_from_clipboard(self):
         clipboard = QApplication.clipboard()
@@ -150,7 +191,8 @@ class ImageDropArea(QFrame):
              return
 
         self.image_paths.append(path)
-        thumb = ImageThumbnail(path)
+        # 将 self (ImageDropArea) 传递给 ImageThumbnail
+        thumb = ImageThumbnail(path, drop_area=self)
         thumb.removed.connect(self.remove_image)
         self.scroll_layout.addWidget(thumb)
         self.update_ui_state()
