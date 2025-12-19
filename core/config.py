@@ -21,7 +21,9 @@ DEFAULT_CONFIG = {
     "text_format_enabled": True,
     "text_font_size": 12,
     "text_font_family": "Arial",
-    "text_auto_wrap": True
+    "text_auto_wrap": True,
+    # History page settings
+    "history_items_per_page": 5
 }
 
 class Config:

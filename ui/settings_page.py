@@ -37,7 +37,6 @@ class SettingsPage(ScrollArea):
         self.retries_slider = Slider(Qt.Horizontal, self.retries_card)
         self.retries_slider.setRange(0, 100)
         self.retries_slider.setValue(cfg.get("max_retries", 5))
-        self.retries_slider.setFixedWidth(150)
         
         self.retries_slider.valueChanged.connect(lambda v: self.retries_label.setText(str(v)))
         
@@ -47,6 +46,28 @@ class SettingsPage(ScrollArea):
         self.retries_card.hBoxLayout.addSpacing(16)
         
         self.general_group.addSettingCard(self.retries_card)
+        
+        # History Items Per Page
+        self.history_items_card = SettingCard(
+            FluentIcon.HISTORY,
+            "History Items Per Page",
+            "Number of items displayed per page in history (1-100)",
+            self.general_group
+        )
+        
+        self.history_items_label = QLabel(str(cfg.get("history_items_per_page", 5)), self.history_items_card)
+        self.history_items_slider = Slider(Qt.Horizontal, self.history_items_card)
+        self.history_items_slider.setRange(1, 100)
+        self.history_items_slider.setValue(cfg.get("history_items_per_page", 5))
+        
+        self.history_items_slider.valueChanged.connect(lambda v: self.history_items_label.setText(str(v)))
+        
+        self.history_items_card.hBoxLayout.addWidget(self.history_items_label)
+        self.history_items_card.hBoxLayout.addSpacing(10)
+        self.history_items_card.hBoxLayout.addWidget(self.history_items_slider)
+        self.history_items_card.hBoxLayout.addSpacing(16)
+        
+        self.general_group.addSettingCard(self.history_items_card)
         self.layout.addWidget(self.general_group)
 
         # Text Format Settings
@@ -70,7 +91,6 @@ class SettingsPage(ScrollArea):
         self.font_size_slider = Slider(Qt.Horizontal, self.font_size_card)
         self.font_size_slider.setRange(8, 72)
         self.font_size_slider.setValue(cfg.get("text_font_size", 12))
-        self.font_size_slider.setFixedWidth(150)
         
         self.font_size_label = QLabel(str(cfg.get("text_font_size", 12)), self.font_size_card)
         self.font_size_label.setFixedWidth(30)
@@ -173,6 +193,16 @@ class SettingsPage(ScrollArea):
         
         self.layout.addStretch()
 
+    def resizeEvent(self, event):
+        """Dynamically adjust slider widths to 60% of parent width"""
+        super().resizeEvent(event)
+        parent_width = self.width()
+        if parent_width > 0:
+            slider_width = int(parent_width * 0.6)
+            self.retries_slider.setFixedWidth(max(slider_width, 100))
+            self.font_size_slider.setFixedWidth(max(slider_width, 100))
+            self.history_items_slider.setFixedWidth(max(slider_width, 100))
+
     def choose_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Output Folder", cfg.get("output_folder"))
         if folder:
@@ -186,6 +216,7 @@ class SettingsPage(ScrollArea):
         cfg.set("api_base_url", url)
         cfg.set("api_key", key)
         cfg.set("max_retries", self.retries_slider.value())
+        cfg.set("history_items_per_page", self.history_items_slider.value())
         cfg.set("text_format_enabled", self.format_switch.isChecked())
         cfg.set("text_font_size", self.font_size_slider.value())
         cfg.set("text_font_family", self.font_family_combo.currentText())

@@ -74,7 +74,7 @@ class MainWindow(FluentWindow):
         self.switchTo(self.generator_interface)
         
         # Populate fields
-        self.generator_interface.prompt_edit.setText(task_data['prompt'])
+        self.generator_interface.prompt_widget.set_prompt(task_data['prompt'])
         self.generator_interface.model_combo.setCurrentText(task_data['model'])
         self.generator_interface.ratio_combo.setCurrentText(task_data['aspect_ratio'])
         self.generator_interface.size_combo.setCurrentText(task_data['image_size'])

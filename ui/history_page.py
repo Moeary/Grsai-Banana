@@ -6,6 +6,7 @@ from qfluentwidgets import (CardWidget, StrongBodyLabel, BodyLabel, CaptionLabel
                             TransparentPushButton, FluentIcon, ImageLabel, ScrollArea, MessageBoxBase, SubtitleLabel)
 
 from core.history_manager import history_mgr
+from core.config import cfg
 
 class TaskDetailsDialog(MessageBoxBase):
     def __init__(self, task_data, parent=None):
@@ -212,7 +213,7 @@ class HistoryPage(QWidget):
         super().__init__()
         self.setObjectName("HistoryPage")
         self.current_page = 1
-        self.items_per_page = 5
+        self.items_per_page = cfg.get("history_items_per_page", 5)
         self.initUI()
 
     def initUI(self):
