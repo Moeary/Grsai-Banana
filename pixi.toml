@@ -21,10 +21,11 @@ main.py
 
 [dependencies]
 python = "3.11.*"
-requests = ">=2.32.5,<3"
-zstandard = ">=0.25.0,<0.26"
-nuitka = ">=2.8.9,<3"
 pyside6 = "==6.6.2"
+requests = ">=2.32.5,<3"
+#下面是编译要用的
+zstandard = ">=0.25.0,<0.26" 
+nuitka = ">=2.8.9,<3"
 
 [pypi-dependencies]
 pyside6-fluent-widgets = ">=1.10.2, <2"
