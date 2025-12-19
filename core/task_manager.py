@@ -17,7 +17,7 @@ class TaskWorker(QThread):
     progress_signal = Signal(int, str)
     finished_signal = Signal(bool, str, str)  # success, result_path/msg, failure_reason
     
-    def __init__(self, prompt, model, ratio, size, ref_urls, task_id=None):
+    def __init__(self, prompt, model, ratio, size, ref_urls, task_id=None, variants=1):
         super().__init__()
         self.prompt = prompt
         self.model = model
@@ -25,6 +25,7 @@ class TaskWorker(QThread):
         self.size = size
         self.ref_urls = ref_urls
         self.task_id = task_id
+        self.variants = variants
         self.is_running = True
         self.setTerminationEnabled(True)
 
@@ -32,7 +33,7 @@ class TaskWorker(QThread):
         try:
             if not self.task_id:
                 try:
-                    res = api.submit_task(self.prompt, self.model, self.ratio, self.size, self.ref_urls)
+                    res = api.submit_task(self.prompt, self.model, self.ratio, self.size, self.ref_urls, self.variants)
                     if res.get("code") != 0:
                         self.finished_signal.emit(False, res.get("msg", "Submission failed"), "Submission failed")
                         return
@@ -97,29 +98,49 @@ class TaskWorker(QThread):
                     if status == "succeeded":
                         results = data.get("results", [])
                         if results:
-                            img_url = results[0].get("url")
-                            try:
-                                img_data = requests.get(img_url, timeout=30).content
-                                timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-                                ext = "png"
-                                if ".jpg" in img_url: ext = "jpg"
-                                if ".jpeg" in img_url: ext = "jpeg"
-                                
-                                filename = f"{timestamp}.{ext}"
-                                output_dir = cfg.get("output_folder")
-                                if not os.path.exists(output_dir):
-                                    os.makedirs(output_dir)
+                            # Handle multiple images (variants)
+                            downloaded_files = []
+                            first_file = None
+                            
+                            for idx, result in enumerate(results):
+                                img_url = result.get("url")
+                                if not img_url:
+                                    continue
                                     
-                                filepath = os.path.join(output_dir, filename)
-                                with open(filepath, "wb") as f:
-                                    f.write(img_data)
+                                try:
+                                    img_data = requests.get(img_url, timeout=30).content
+                                    timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+                                    ext = "png"
+                                    if ".jpg" in img_url: ext = "jpg"
+                                    if ".jpeg" in img_url: ext = "jpeg"
                                     
-                                history_mgr.update_task(self.task_id, "succeeded", result_path=filepath, preview_url=img_url)
-                                self.finished_signal.emit(True, filepath, "Success")
-                            except Exception as e:
-                                print(f"[TaskWorker] Download error: {e}")
-                                history_mgr.update_task(self.task_id, "failed", failure_reason=str(e))
-                                self.finished_signal.emit(False, str(e), "Download Failed")
+                                    # For multiple variants, add index suffix
+                                    if len(results) > 1:
+                                        filename = f"{timestamp}_{idx+1}.{ext}"
+                                    else:
+                                        filename = f"{timestamp}.{ext}"
+                                    
+                                    output_dir = cfg.get("output_folder")
+                                    if not os.path.exists(output_dir):
+                                        os.makedirs(output_dir)
+                                        
+                                    filepath = os.path.join(output_dir, filename)
+                                    with open(filepath, "wb") as f:
+                                        f.write(img_data)
+                                    
+                                    downloaded_files.append(filepath)
+                                    if idx == 0:
+                                        first_file = filepath
+                                except Exception as e:
+                                    print(f"[TaskWorker] Download error for image {idx}: {e}")
+                            
+                            if downloaded_files:
+                                # Update history with first file, but all files are downloaded to output folder
+                                history_mgr.update_task(self.task_id, "succeeded", result_path=first_file, preview_url=results[0].get("url"))
+                                self.finished_signal.emit(True, first_file, "Success")
+                            else:
+                                history_mgr.update_task(self.task_id, "failed", failure_reason="Download failed")
+                                self.finished_signal.emit(False, "Download failed", "Download Failed")
                         else:
                             history_mgr.update_task(self.task_id, "failed", failure_reason="No results found")
                             self.finished_signal.emit(False, "No results found", "No Results")
@@ -158,9 +179,9 @@ class TaskManager:
     def __init__(self):
         self.active_workers = {}  # task_widget -> worker
     
-    def create_worker(self, prompt, model, ratio, size, ref_urls):
+    def create_worker(self, prompt, model, ratio, size, ref_urls, variants=1):
         """Create and return a new TaskWorker"""
-        worker = TaskWorker(prompt, model, ratio, size, ref_urls)
+        worker = TaskWorker(prompt, model, ratio, size, ref_urls, variants=variants)
         return worker
     
     def stop_worker(self, task_widget):

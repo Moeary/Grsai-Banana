@@ -1,5 +1,4 @@
 import os
-import base64
 from datetime import datetime
 from PySide6.QtCore import Qt, Signal, QUrl, QSize, QTimer
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDialog, 
@@ -19,20 +18,25 @@ class ImageThumbnail(QWidget):
     def __init__(self, path, parent=None):
         super().__init__(parent)
         self.path = path
-        self.setFixedSize(100, 100)
+        self.setFixedHeight(250)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0,0,0,0)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
         
         self.img_label = QLabel()
         self.img_label.setScaledContents(True)
         self.img_label.setStyleSheet("border-radius: 8px; border: 1px solid #ddd;")
+        # 待修改
+        
+        self.img_label.setFixedSize(250,250)
         
         pixmap = QPixmap(path)
         if not pixmap.isNull():
              self.img_label.setPixmap(pixmap)
         
         layout.addWidget(self.img_label)
+        layout.addStretch()
         
         # Close button overlay
         self.close_btn = TransparentToolButton(FluentIcon.CLOSE, self)
@@ -68,13 +72,13 @@ class ImageDropArea(QFrame):
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setStyleSheet("background: transparent; border: none;")
-        self.scroll_area.setFixedHeight(120)
+        # self.scroll_area.setFixedHeight(120) # Removed fixed height to allow expansion
         self.scroll_area.hide()
         
         self.scroll_content = QWidget()
         self.scroll_content.setStyleSheet("background: transparent;")
-        self.scroll_layout = QHBoxLayout(self.scroll_content)
-        self.scroll_layout.setAlignment(Qt.AlignLeft)
+        self.scroll_layout = QVBoxLayout(self.scroll_content)
+        self.scroll_layout.setAlignment(Qt.AlignTop)
         self.scroll_layout.setContentsMargins(10, 5, 10, 5)
         self.scroll_layout.setSpacing(10)
         
@@ -111,9 +115,11 @@ class ImageDropArea(QFrame):
         if mime_data.hasImage():
             image = clipboard.image()
             if not image.isNull():
-                import tempfile
-                temp_dir = tempfile.gettempdir()
-                temp_path = os.path.join(temp_dir, f"paste_image_{int(datetime.now().timestamp())}.png")
+                # Save clipboard image to input folder
+                input_dir = os.path.join(os.getcwd(), "input")
+                if not os.path.exists(input_dir):
+                    os.makedirs(input_dir)
+                temp_path = os.path.join(input_dir, f"clipboard_{int(datetime.now().timestamp())}.png")
                 image.save(temp_path, "PNG")
                 self.add_image(temp_path)
                 InfoBar.success(title="Pasted", content="Image pasted from clipboard.", parent=self, position=InfoBarPosition.TOP_RIGHT)
@@ -216,7 +222,7 @@ class TaskWidget(QFrame):
         self.status_text = "Pending"
         self.result_path = None
         
-        self.setFixedHeight(80)
+        self.setFixedHeight(120)
         self.setStyleSheet("TaskWidget { border: 1px solid #e0e0e0; border-radius: 8px; background-color: rgba(255, 255, 255, 0.05); }")
         
         layout = QHBoxLayout(self)
@@ -272,7 +278,7 @@ class TaskWidget(QFrame):
         self.result_path = filepath
         self.status_stack.setCurrentIndex(1)
         
-        # Update status label
+        # Update status label - now shows success + regenerate hint
         if self.attempt_count == 0:
             self.status_label.setText("✓ Success on 1st attempt")
         elif self.attempt_count == 1:
@@ -284,6 +290,10 @@ class TaskWidget(QFrame):
         if not pixmap.isNull():
             icon = QIcon(pixmap)
             self.result_btn.setIcon(icon)
+        
+        # Add context menu for regenerate
+        self.result_btn.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.result_btn.customContextMenuRequested.connect(self.show_result_menu)
             
         self.setStyleSheet("TaskWidget { border: 1px solid #90EE90; border-radius: 8px; background-color: rgba(255, 255, 255, 0.1); }")
 
@@ -323,6 +333,22 @@ class TaskWidget(QFrame):
         if self.result_path:
             QDesktopServices.openUrl(QUrl.fromLocalFile(self.result_path))
 
+    def show_result_menu(self, pos):
+        """Show context menu on result image"""
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu()
+        regenerate_action = menu.addAction("Regenerate New Image")
+        regenerate_action.triggered.connect(self.regenerate)
+        menu.exec(self.result_btn.mapToGlobal(pos))
+
+    def regenerate(self):
+        """Regenerate image with same parameters"""
+        # Reset state to allow new generation
+        self.attempt_count = 0
+        self.retry_count = 0
+        self.update_progress(0, "Regenerating...")
+        self.retry_requested.emit(self)
+
 
 class GeneratorPage(QWidget):
     """UI-only generator page. Core logic is in TaskManager"""
@@ -344,53 +370,7 @@ class GeneratorPage(QWidget):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(15)
         
-        # Top: Prompt Section
-        prompt_label_layout = QHBoxLayout()
-        prompt_label_layout.addWidget(StrongBodyLabel("Prompt"))
-        prompt_label_layout.addStretch()
-        
-        # Prompt toolbar buttons
-        paste_btn = TransparentToolButton(FluentIcon.PASTE)
-        paste_btn.setToolTip("Paste from clipboard")
-        paste_btn.clicked.connect(self.paste_to_prompt)
-        prompt_label_layout.addWidget(paste_btn)
-        
-        clear_btn = TransparentToolButton(FluentIcon.DELETE)
-        clear_btn.setToolTip("Clear prompt")
-        clear_btn.clicked.connect(self.clear_prompt)
-        prompt_label_layout.addWidget(clear_btn)
-        
-        left_layout.addLayout(prompt_label_layout)
-        
-        self.prompt_edit = TextEdit()
-        self.prompt_edit.setPlaceholderText("Enter your prompt here...")
-        self.prompt_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.prompt_edit.setMinimumHeight(150)
-        
-        # Apply text formatting if enabled
-        self._apply_text_formatting()
-        
-        left_layout.addWidget(self.prompt_edit, 1)  # Stretch to fill available space
-        
-        # Bottom Section (Images + Settings) - stays at bottom
-        bottom_section = QWidget()
-        bottom_layout = QHBoxLayout(bottom_section)
-        bottom_layout.setContentsMargins(0, 0, 0, 0)
-        bottom_layout.setSpacing(15)
-        
-        # Bottom Left: Images
-        img_container = QWidget()
-        img_layout = QVBoxLayout(img_container)
-        img_layout.setContentsMargins(0, 0, 0, 0)
-        img_layout.addWidget(StrongBodyLabel("Reference Images"))
-        
-        self.drop_area = ImageDropArea()
-        self.drop_area.setFixedHeight(200)
-        img_layout.addWidget(self.drop_area)
-        
-        bottom_layout.addWidget(img_container, 1)
-        
-        # Bottom Right: Settings
+        # --- Top Section: Settings & Generate Button ---
         settings_container = QWidget()
         settings_layout_v = QVBoxLayout(settings_container)
         settings_layout_v.setContentsMargins(0, 0, 0, 0)
@@ -398,26 +378,52 @@ class GeneratorPage(QWidget):
         settings_card = CardWidget()
         settings_inner = QVBoxLayout(settings_card)
         
-        # Model
+        # Model - Combined selector for all APIs
         settings_inner.addWidget(CaptionLabel("Model"))
         self.model_combo = ComboBox()
-        self.model_combo.addItems(["nano-banana-fast", "nano-banana", "nano-banana-pro"])
-        self.model_combo.setCurrentText(cfg.get("last_model"))
+        self.model_combo.addItems([
+            "nano-banana-fast", "nano-banana", "nano-banana-pro", "nano-banana-pro-vt",
+            "gpt-image-1.5", "sora-image"
+        ])
+        self.model_combo.setCurrentText(cfg.get("last_model", "nano-banana-fast"))
+        self.model_combo.currentTextChanged.connect(self.on_model_changed)
         settings_inner.addWidget(self.model_combo)
 
-        # Aspect Ratio
-        settings_inner.addWidget(CaptionLabel("Aspect Ratio"))
+        # Aspect Ratio (for nano-banana)
+        self.ratio_label_widget = CaptionLabel("Aspect Ratio")
+        settings_inner.addWidget(self.ratio_label_widget)
         self.ratio_combo = ComboBox()
         self.ratio_combo.addItems(["auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "5:4", "4:5", "21:9"])
-        self.ratio_combo.setCurrentText(cfg.get("last_aspect_ratio"))
+        self.ratio_combo.setCurrentText(cfg.get("last_aspect_ratio", "auto"))
         settings_inner.addWidget(self.ratio_combo)
 
-        # Image Size
-        settings_inner.addWidget(CaptionLabel("Image Size"))
+        # Image Size (for nano-banana)
+        self.size_label_widget = CaptionLabel("Image Size")
+        settings_inner.addWidget(self.size_label_widget)
         self.size_combo = ComboBox()
         self.size_combo.addItems(["1K", "2K", "4K"])
-        self.size_combo.setCurrentText(cfg.get("last_image_size"))
+        self.size_combo.setCurrentText(cfg.get("last_image_size", "1K"))
         settings_inner.addWidget(self.size_combo)
+        
+        # Variants (for GPT Image/Sora)
+        self.variants_label_widget = CaptionLabel("Variants")
+        settings_inner.addWidget(self.variants_label_widget)
+        self.variants_combo = ComboBox()
+        self.variants_combo.addItems(["1", "2"])
+        self.variants_combo.setCurrentText("1")
+        settings_inner.addWidget(self.variants_combo)
+        self.variants_combo.hide()  # Hidden by default
+        self.variants_label_widget.hide()  # Hide label too
+
+        # Size (for GPT Image/Sora)
+        self.size_label_widget_gpt = CaptionLabel("Image Size (GPT/Sora)")
+        settings_inner.addWidget(self.size_label_widget_gpt)
+        self.size_combo_gpt = ComboBox()
+        self.size_combo_gpt.addItems(["auto", "1:1", "3:2", "2:3"])
+        self.size_combo_gpt.setCurrentText("auto")
+        settings_inner.addWidget(self.size_combo_gpt)
+        self.size_label_widget_gpt.hide()  # Hide label too
+        self.size_combo_gpt.hide()  # Hidden by default
         
         # Auto Retry
         self.auto_retry_cb = CheckBox("Auto Retry on Failure")
@@ -432,9 +438,79 @@ class GeneratorPage(QWidget):
         self.gen_btn.setFixedHeight(40)
         settings_layout_v.addWidget(self.gen_btn)
         
-        bottom_layout.addWidget(settings_container, 1)
+        left_layout.addWidget(settings_container)
         
-        left_layout.addWidget(bottom_section)
+        # --- Bottom Section: Images (Left) + Prompt (Right) ---
+        bottom_split_widget = QWidget()
+        bottom_split_layout = QHBoxLayout(bottom_split_widget)
+        bottom_split_layout.setContentsMargins(0, 0, 0, 0)
+        bottom_split_layout.setSpacing(15)
+        
+        # 1. Image Drop Area (Left) with header
+        img_left_container = QWidget()
+        img_left_layout = QVBoxLayout(img_left_container)
+        img_left_layout.setContentsMargins(0, 0, 0, 0)
+        img_left_layout.setSpacing(5)
+        
+        # Image Drop Area Header
+        drop_header_layout = QHBoxLayout()
+        drop_header_layout.addWidget(StrongBodyLabel("Reference Images"))
+        drop_header_layout.addStretch()
+
+        self.drop_area = ImageDropArea()
+        paste_btn = TransparentToolButton(FluentIcon.PASTE)
+        paste_btn.setToolTip("Paste from clipboard")
+        paste_btn.clicked.connect(self.drop_area.paste_from_clipboard)
+        drop_header_layout.addWidget(paste_btn)
+
+        clear_btn = TransparentToolButton(FluentIcon.DELETE)
+        clear_btn.setToolTip("Clear all images")
+        clear_btn.clicked.connect(self.drop_area.clear_images)
+        drop_header_layout.addWidget(clear_btn)
+        
+        img_left_layout.addLayout(drop_header_layout)
+        
+        self.drop_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.drop_area.setStyleSheet("QFrame { border: 2px dashed #aaa; border-radius: 10px; background-color: transparent; }")
+        img_left_layout.addWidget(self.drop_area)
+        
+        bottom_split_layout.addWidget(img_left_container, 1)
+        
+        # 2. Prompt Area (Right)
+        prompt_container = QWidget()
+        prompt_layout = QVBoxLayout(prompt_container)
+        prompt_layout.setContentsMargins(0, 0, 0, 0)
+        prompt_layout.setSpacing(5)
+        
+        # Prompt Header (Label + Buttons)
+        prompt_header = QHBoxLayout()
+        prompt_header.addWidget(StrongBodyLabel("Prompt"))
+        prompt_header.addStretch()
+        
+        paste_btn = TransparentToolButton(FluentIcon.PASTE)
+        paste_btn.setToolTip("Paste from clipboard")
+        paste_btn.clicked.connect(self.paste_to_prompt)
+        prompt_header.addWidget(paste_btn)
+        
+        clear_btn = TransparentToolButton(FluentIcon.DELETE)
+        clear_btn.setToolTip("Clear prompt")
+        clear_btn.clicked.connect(self.clear_prompt)
+        prompt_header.addWidget(clear_btn)
+        
+        prompt_layout.addLayout(prompt_header)
+        
+        self.prompt_edit = TextEdit()
+        self.prompt_edit.setPlaceholderText("Enter your prompt here...")
+        self.prompt_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        
+        # Apply text formatting if enabled
+        self._apply_text_formatting()
+        
+        prompt_layout.addWidget(self.prompt_edit)
+        
+        bottom_split_layout.addWidget(prompt_container, 1)
+        
+        left_layout.addWidget(bottom_split_widget, 1) # Give it stretch factor to fill remaining space
         
         main_layout.addWidget(left_panel, 2)
 
@@ -478,6 +554,26 @@ class GeneratorPage(QWidget):
                     path = url.toLocalFile()
                     if path.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
                         self.drop_area.add_image(path)
+
+    def on_model_changed(self, model_name):
+        """Update UI based on selected model"""
+        is_nano = model_name.startswith("nano-banana")
+        is_gpt = model_name in ["gpt-image-1.5", "sora-image"]
+        is_gpt_image = model_name == "gpt-image-1.5"
+        
+        # Toggle nano-banana specific options
+        self.ratio_label_widget.setVisible(is_nano)
+        self.ratio_combo.setVisible(is_nano)
+        self.size_label_widget.setVisible(is_nano)
+        self.size_combo.setVisible(is_nano)
+        
+        # Toggle GPT/Sora specific options
+        self.variants_label_widget.setVisible(is_gpt)
+        self.variants_combo.setVisible(is_gpt)
+        
+        # Toggle GPT Image 1.5 size option
+        self.size_label_widget_gpt.setVisible(is_gpt_image)
+        self.size_combo_gpt.setVisible(is_gpt_image)
 
     def paste_to_prompt(self):
         """Paste text from clipboard to prompt"""
@@ -530,6 +626,10 @@ class GeneratorPage(QWidget):
         model = self.model_combo.currentText()
         ratio = self.ratio_combo.currentText()
         size = self.size_combo.currentText()
+        # For GPT Image 1.5, use the GPT size selector
+        if model == "gpt-image-1.5":
+            size = self.size_combo_gpt.currentText()
+        variants = int(self.variants_combo.currentText())
         
         cfg.set("last_model", model)
         cfg.set("last_aspect_ratio", ratio)
@@ -538,12 +638,9 @@ class GeneratorPage(QWidget):
         ref_urls = []
         for img_path in self.drop_area.image_paths:
             try:
-                with open(img_path, "rb") as img_file:
-                    b64_string = base64.b64encode(img_file.read()).decode('utf-8')
-                    ext = os.path.splitext(img_path)[1].lower().replace('.', '')
-                    if ext == 'jpg': ext = 'jpeg'
-                    data_uri = f"data:image/{ext};base64,{b64_string}"
-                    ref_urls.append(data_uri)
+                # Use local file path directly instead of base64
+                if os.path.isfile(img_path):
+                    ref_urls.append(img_path)
             except Exception as e:
                 print(f"Error processing image {img_path}: {e}")
 
@@ -551,7 +648,8 @@ class GeneratorPage(QWidget):
             "model": model,
             "ratio": ratio,
             "size": size,
-            "ref_urls": ref_urls
+            "ref_urls": ref_urls,
+            "variants": variants
         }
         
         self.create_task(prompt, params)
@@ -568,12 +666,14 @@ class GeneratorPage(QWidget):
 
     def start_worker(self, task_widget):
         try:
+            variants = task_widget.params.get("variants", 1)
             worker = task_manager.create_worker(
                 task_widget.prompt, 
                 task_widget.params["model"], 
                 task_widget.params["ratio"], 
                 task_widget.params["size"], 
-                task_widget.params["ref_urls"]
+                task_widget.params["ref_urls"],
+                variants=variants
             )
             
             # Ensure progress ring is visible
