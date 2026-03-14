@@ -4,8 +4,12 @@ from PySide6.QtGui import QPixmap, QIcon, QDesktopServices
 from qfluentwidgets import (StrongBodyLabel, BodyLabel, TransparentToolButton, ProgressRing, FluentIcon, isDarkTheme, qconfig, ScrollArea)
 
 from core.config import cfg
+from core.model_catalog import VIP_MODELS
 
 class TaskWidget(QFrame):
+    VIP_RESTRICTED_MODELS = set(VIP_MODELS)
+    MODERATION_FAILURE_REASONS = {"output_moderation", "input_moderation"}
+
     retry_requested = Signal(object)
     regenerate_requested = Signal(object)
 
@@ -140,18 +144,35 @@ class TaskWidget(QFrame):
             
         self.update_style("success")
 
-    def set_failed(self, reason):
+    def _can_auto_retry(self, failure_reason):
+        if not self.auto_retry:
+            return False
+        if self.retry_count >= self.max_retries:
+            return False
+
+        model_name = self.params.get("model", "")
+        is_vip_restricted = (
+            model_name in self.VIP_RESTRICTED_MODELS
+            and failure_reason in self.MODERATION_FAILURE_REASONS
+            and not cfg.get("vip_moderation_auto_retry", False)
+        )
+
+        return not is_vip_restricted
+
+    def set_failed(self, reason, failure_reason=None):
         try:
             self.status_stack.setCurrentIndex(2)
             self.retry_btn.setToolTip(f"Failed: {reason}. Click to retry.")
             self.status_label.setText(f"✗ Failed: {reason}")
             self.update_style("failed")
             
-            if self.auto_retry and self.retry_count < self.max_retries:
+            if self._can_auto_retry(failure_reason):
                 print(f"[TaskWidget] Auto-retrying... ({self.retry_count + 1}/{self.max_retries})")
                 self.retry_count += 1
                 self.attempt_count += 1
                 self.retry_timer.start(1000)
+            elif self.auto_retry and failure_reason in self.MODERATION_FAILURE_REASONS and self.params.get("model", "") in self.VIP_RESTRICTED_MODELS:
+                self.status_label.setText(f"✗ Failed: {reason} (Auto-retry blocked for VIP moderation)")
         except Exception as e:
             print(f"[TaskWidget] Error in set_failed: {e}")
     

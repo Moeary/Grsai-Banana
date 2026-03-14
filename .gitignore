@@ -1,6 +1,7 @@
 dist/*
 input/*
 output/*
+__pycache__/
 *.pyc
 
 config.json
@@ -12,3 +13,4 @@ grsai提示教程.md
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+

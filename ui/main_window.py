@@ -6,6 +6,7 @@ from ui.generator_page import GeneratorPage
 from ui.history_page import HistoryPage
 from ui.settings_page import SettingsPage
 from core.config import cfg
+from core.i18n import tr
 from core.task_manager import task_manager
 
 class MainWindow(FluentWindow):
@@ -32,7 +33,7 @@ class MainWindow(FluentWindow):
     def initWindow(self):
         self.resize(1100, 750)
         self.setMinimumWidth(760)
-        self.setWindowTitle('Banana Image Generator')
+        self.setWindowTitle(tr("main.title"))
         
         # Center on screen
         desktop = QApplication.primaryScreen().availableGeometry()
@@ -40,19 +41,19 @@ class MainWindow(FluentWindow):
         self.move(w//2 - self.width()//2, h//2 - self.height()//2)
 
     def initNavigation(self):
-        self.addSubInterface(self.generator_interface, FluentIcon.BRUSH, 'Generator')
-        self.addSubInterface(self.history_interface, FluentIcon.HISTORY, 'History')
+        self.addSubInterface(self.generator_interface, FluentIcon.BRUSH, tr("nav.generator"))
+        self.addSubInterface(self.history_interface, FluentIcon.HISTORY, tr("nav.history"))
         
         self.navigationInterface.addItem(
             routeKey='theme_toggle',
             icon=FluentIcon.CONSTRACT,
-            text='Toggle Theme',
+            text=tr("nav.toggle_theme"),
             onClick=self.toggleTheme,
             selectable=False,
             position=NavigationItemPosition.BOTTOM
         )
         
-        self.addSubInterface(self.settings_interface, FluentIcon.SETTING, 'Settings', position=NavigationItemPosition.BOTTOM)
+        self.addSubInterface(self.settings_interface, FluentIcon.SETTING, tr("nav.settings"), position=NavigationItemPosition.BOTTOM)
 
     def toggleTheme(self):
         if qconfig.theme == Theme.DARK:
@@ -72,12 +73,20 @@ class MainWindow(FluentWindow):
     def regenerate_task(self, task_data):
         # Switch to generator page
         self.switchTo(self.generator_interface)
+
+        model_name = task_data.get('model', '')
+        target_tab = self.generator_interface.get_tab_for_model(model_name)
+        if target_tab:
+            self.generator_interface.model_tabs.setCurrentItem(target_tab)
         
         # Populate fields
         self.generator_interface.prompt_widget.set_prompt(task_data['prompt'])
-        self.generator_interface.model_combo.setCurrentText(task_data['model'])
-        self.generator_interface.ratio_combo.setCurrentText(task_data['aspect_ratio'])
-        self.generator_interface.size_combo.setCurrentText(task_data['image_size'])
+        self.generator_interface.model_combo.setCurrentText(model_name)
+        if model_name.startswith("nano-banana"):
+            self.generator_interface.ratio_combo.setCurrentText(task_data['aspect_ratio'])
+            self.generator_interface.size_combo.setCurrentText(task_data['image_size'])
+        elif model_name == "gpt-image-1.5":
+            self.generator_interface.gpt_size_combo.setCurrentText(task_data['image_size'])
         
         # Handle reference image if it exists
         # Clear existing images first

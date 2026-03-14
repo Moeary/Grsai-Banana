@@ -161,8 +161,11 @@ class TaskWorker(QThread):
                     elif status == "failed":
                         reason = data.get("failure_reason", "Unknown")
                         error_msg = data.get("error", "")
+                        display_reason = reason
+                        if error_msg:
+                            display_reason = f"{reason}: {error_msg}"
                         history_mgr.update_task(self.task_id, "failed", failure_reason=reason, error_message=error_msg)
-                        self.finished_signal.emit(False, reason, reason)
+                        self.finished_signal.emit(False, display_reason, reason)
                         return
                 except Exception as e:
                     print(f"[TaskWorker] Processing error: {e}")

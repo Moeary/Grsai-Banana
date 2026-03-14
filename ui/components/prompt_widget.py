@@ -1,8 +1,8 @@
-from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QApplication
 from PySide6.QtGui import QFont, QTextOption
 from qfluentwidgets import TextEdit, StrongBodyLabel, TransparentToolButton, FluentIcon, InfoBar, InfoBarPosition, isDarkTheme, qconfig
 from core.config import cfg
+from core.i18n import tr
 
 class PromptWidget(QWidget):
     def __init__(self, parent=None):
@@ -16,24 +16,30 @@ class PromptWidget(QWidget):
         
         # Header
         header_layout = QHBoxLayout()
-        header_layout.addWidget(StrongBodyLabel("Prompt"))
+        self.title_label = StrongBodyLabel(tr("prompt.title"))
+        header_layout.addWidget(self.title_label)
         header_layout.addStretch()
         
-        paste_btn = TransparentToolButton(FluentIcon.PASTE)
-        paste_btn.setToolTip("Paste from clipboard")
-        paste_btn.clicked.connect(self.paste_from_clipboard)
-        header_layout.addWidget(paste_btn)
+        self.paste_btn = TransparentToolButton(FluentIcon.PASTE)
+        self.paste_btn.setToolTip(tr("prompt.tooltip.paste"))
+        self.paste_btn.clicked.connect(self.paste_from_clipboard)
+        header_layout.addWidget(self.paste_btn)
+
+        self.format_btn = TransparentToolButton(FluentIcon.EDIT)
+        self.format_btn.setToolTip(tr("prompt.tooltip.format"))
+        self.format_btn.clicked.connect(self.normalize_prompt_format)
+        header_layout.addWidget(self.format_btn)
         
-        clear_btn = TransparentToolButton(FluentIcon.DELETE)
-        clear_btn.setToolTip("Clear prompt")
-        clear_btn.clicked.connect(self.clear_prompt)
-        header_layout.addWidget(clear_btn)
+        self.clear_btn = TransparentToolButton(FluentIcon.DELETE)
+        self.clear_btn.setToolTip(tr("prompt.tooltip.clear"))
+        self.clear_btn.clicked.connect(self.clear_prompt)
+        header_layout.addWidget(self.clear_btn)
         
         layout.addLayout(header_layout)
         
         # Text Edit
         self.prompt_edit = TextEdit()
-        self.prompt_edit.setPlaceholderText("Enter your prompt here...")
+        self.prompt_edit.setPlaceholderText(tr("prompt.placeholder"))
         self.prompt_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.update_prompt_edit_style()
         qconfig.themeChanged.connect(self.update_prompt_edit_style)
@@ -54,14 +60,34 @@ class PromptWidget(QWidget):
         if text:
             self.prompt_edit.insertPlainText(text)
             self._apply_text_formatting()
-            InfoBar.success(title="Pasted", content="Text pasted to prompt.", parent=self, position=InfoBarPosition.TOP_RIGHT)
+            InfoBar.success(title=tr("common.pasted"), content=tr("prompt.msg.pasted"), parent=self, position=InfoBarPosition.TOP_RIGHT)
 
     def clear_prompt(self):
         self.prompt_edit.clear()
         font = QFont()
         self.prompt_edit.setFont(font)
         self.prompt_edit.setWordWrapMode(QTextOption.WordWrap)
-        InfoBar.success(title="Cleared", content="Prompt cleared.", parent=self, position=InfoBarPosition.TOP_RIGHT)
+        InfoBar.success(title=tr("common.cleared"), content=tr("prompt.msg.cleared"), parent=self, position=InfoBarPosition.TOP_RIGHT)
+
+    def normalize_prompt_format(self):
+        """Strip rich text formatting and re-apply configured plain-text style."""
+        plain_text = self.prompt_edit.toPlainText()
+        cursor = self.prompt_edit.textCursor()
+        cursor_pos = cursor.position()
+
+        self.prompt_edit.setPlainText(plain_text)
+        self._apply_text_formatting()
+
+        cursor = self.prompt_edit.textCursor()
+        cursor.setPosition(min(cursor_pos, len(plain_text)))
+        self.prompt_edit.setTextCursor(cursor)
+
+        InfoBar.success(
+            title=tr("common.formatted"),
+            content=tr("prompt.msg.formatted"),
+            parent=self,
+            position=InfoBarPosition.TOP_RIGHT
+        )
 
     def _apply_text_formatting(self):
         if cfg.get("text_format_enabled", False):

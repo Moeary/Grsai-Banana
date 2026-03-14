@@ -1,22 +1,35 @@
 import os
-from datetime import datetime
-from PySide6.QtCore import Qt, QSize
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QScrollArea, QApplication)
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QApplication
 from qfluentwidgets import (CardWidget, PrimaryPushButton, ComboBox, CaptionLabel, 
                             InfoBar, InfoBarPosition, SegmentedWidget, CheckBox, Slider,
                             TransparentToolButton, FluentIcon, StrongBodyLabel, BodyLabel, isDarkTheme, qconfig)
 
 from core.config import cfg
+from core.i18n import tr
+from core.model_catalog import (
+    TAB_BANANA_1,
+    TAB_BANANA_PRO,
+    TAB_GPT_IMAGE,
+    TAB_MODELS,
+    NANO_IMAGE_SIZE_OPTIONS,
+    VIP_MODELS,
+)
 from core.task_manager import task_manager
 from ui.components.prompt_widget import PromptWidget
 from ui.components.image_drop_area import ImageDropArea
 from ui.components.task_widget import TaskWidget, TaskListWidget
 
 class GeneratorPage(QWidget):
+    TAB_MODELS = TAB_MODELS
+    NANO_IMAGE_SIZE_OPTIONS = NANO_IMAGE_SIZE_OPTIONS
+    VIP_MODELS = set(VIP_MODELS)
+
     def __init__(self):
         super().__init__()
         self.setObjectName("GeneratorPage")
         self.task_counter = 0
+        self.current_tab_key = TAB_BANANA_1
         self.initUI()
 
     def initUI(self):
@@ -38,16 +51,16 @@ class GeneratorPage(QWidget):
         
         # 1. Tabs
         self.model_tabs = SegmentedWidget()
-        self.model_tabs.addItem("Banana 1", "Banana 1")
-        self.model_tabs.addItem("Banana Pro", "Banana Pro")
-        self.model_tabs.addItem("GPT Image", "GPT Image")
+        self.model_tabs.addItem(TAB_BANANA_1, tr("generator.tab.banana_1"))
+        self.model_tabs.addItem(TAB_BANANA_PRO, tr("generator.tab.banana_pro"))
+        self.model_tabs.addItem(TAB_GPT_IMAGE, tr("generator.tab.gpt_image"))
         
         # Load last selected tab or default
-        last_tab = cfg.get("last_tab", "Banana 1")
-        if last_tab in ["Banana 1", "Banana Pro", "GPT Image"]:
+        last_tab = self._normalize_tab_key(cfg.get("last_tab", TAB_BANANA_1))
+        if last_tab in [TAB_BANANA_1, TAB_BANANA_PRO, TAB_GPT_IMAGE]:
             self.model_tabs.setCurrentItem(last_tab)
         else:
-            self.model_tabs.setCurrentItem("Banana 1")
+            self.model_tabs.setCurrentItem(TAB_BANANA_1)
             
         self.model_tabs.currentItemChanged.connect(self.on_tab_changed)
         settings_layout_v.addWidget(self.model_tabs)
@@ -60,13 +73,14 @@ class GeneratorPage(QWidget):
         settings_inner = QVBoxLayout(self.settings_card)
         
         # Model Selector (Specific to tab)
-        settings_inner.addWidget(CaptionLabel("Model"))
+        self.model_caption = CaptionLabel(tr("generator.model"))
+        settings_inner.addWidget(self.model_caption)
         self.model_combo = ComboBox()
         self.model_combo.currentTextChanged.connect(self.on_model_changed)
         settings_inner.addWidget(self.model_combo)
 
         # Aspect Ratio (Banana)
-        self.ratio_label = CaptionLabel("Aspect Ratio")
+        self.ratio_label = CaptionLabel(tr("generator.aspect_ratio"))
         settings_inner.addWidget(self.ratio_label)
         self.ratio_combo = ComboBox()
         self.ratio_combo.addItems(["auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "5:4", "4:5", "21:9"])
@@ -74,7 +88,7 @@ class GeneratorPage(QWidget):
         settings_inner.addWidget(self.ratio_combo)
 
         # Image Size (Banana Pro)
-        self.size_label = CaptionLabel("Image Size")
+        self.size_label = CaptionLabel(tr("generator.image_size"))
         settings_inner.addWidget(self.size_label)
         self.size_combo = ComboBox()
         self.size_combo.addItems(["1K", "2K", "4K"])
@@ -82,7 +96,7 @@ class GeneratorPage(QWidget):
         settings_inner.addWidget(self.size_combo)
         
         # Variants (GPT)
-        self.variants_label = CaptionLabel("Variants")
+        self.variants_label = CaptionLabel(tr("generator.variants"))
         settings_inner.addWidget(self.variants_label)
         self.variants_combo = ComboBox()
         self.variants_combo.addItems(["1", "2"])
@@ -90,7 +104,7 @@ class GeneratorPage(QWidget):
         settings_inner.addWidget(self.variants_combo)
 
         # Size (GPT)
-        self.gpt_size_label = CaptionLabel("Image Size (GPT/Sora)")
+        self.gpt_size_label = CaptionLabel(tr("generator.gpt_size"))
         settings_inner.addWidget(self.gpt_size_label)
         self.gpt_size_combo = ComboBox()
         self.gpt_size_combo.addItems(["auto", "1:1", "3:2", "2:3"])
@@ -100,13 +114,14 @@ class GeneratorPage(QWidget):
         # Auto Retry and Parallel Tasks
         retry_parallel_layout = QHBoxLayout()
         
-        self.auto_retry_cb = CheckBox("Auto Retry on Failure")
+        self.auto_retry_cb = CheckBox(tr("generator.auto_retry"))
         self.auto_retry_cb.setChecked(cfg.get("auto_retry_on_failure", False))
         retry_parallel_layout.addWidget(self.auto_retry_cb)
         
         retry_parallel_layout.addStretch()
         
-        parallel_label = BodyLabel("Parallel Tasks (1-10):")
+        self.parallel_label = BodyLabel(tr("generator.parallel_tasks"))
+        parallel_label = self.parallel_label
         retry_parallel_layout.addWidget(parallel_label)
         
         self.parallel_slider = Slider(Qt.Horizontal)
@@ -125,6 +140,12 @@ class GeneratorPage(QWidget):
         retry_parallel_layout.addWidget(self.parallel_value_label)
         
         settings_inner.addLayout(retry_parallel_layout)
+
+        self.auto_retry_hint = CaptionLabel("")
+        self.auto_retry_hint.setWordWrap(True)
+        self.auto_retry_hint.hide()
+        settings_inner.addWidget(self.auto_retry_hint)
+
         settings_layout_v.addWidget(self.settings_card)
         
         left_layout.addWidget(settings_container)
@@ -144,16 +165,17 @@ class GeneratorPage(QWidget):
         # Image Drop Area Header
         img_header_layout = QHBoxLayout()
         img_header_layout.setContentsMargins(0, 0, 0, 0)
-        img_header_layout.addWidget(StrongBodyLabel("Reference Images"))
+        self.ref_images_label = StrongBodyLabel(tr("generator.reference_images"))
+        img_header_layout.addWidget(self.ref_images_label)
         img_header_layout.addStretch()
         
         img_paste_btn = TransparentToolButton(FluentIcon.PASTE)
-        img_paste_btn.setToolTip("Paste from clipboard")
+        img_paste_btn.setToolTip(tr("drop.tooltip.paste"))
         img_paste_btn.clicked.connect(self.on_image_paste)
         img_header_layout.addWidget(img_paste_btn)
         
         img_clear_btn = TransparentToolButton(FluentIcon.DELETE)
-        img_clear_btn.setToolTip("Clear all images")
+        img_clear_btn.setToolTip(tr("drop.tooltip.clear"))
         img_clear_btn.clicked.connect(self.on_image_clear)
         img_header_layout.addWidget(img_clear_btn)
         
@@ -174,7 +196,7 @@ class GeneratorPage(QWidget):
         left_layout.addWidget(middle_split, 1)
         
         # --- Bottom Section: Generate Button ---
-        self.gen_btn = PrimaryPushButton("Generate Image")
+        self.gen_btn = PrimaryPushButton(tr("generator.generate"))
         self.gen_btn.clicked.connect(self.on_generate)
         self.gen_btn.setFixedHeight(45)
         left_layout.addWidget(self.gen_btn)
@@ -189,8 +211,8 @@ class GeneratorPage(QWidget):
         
         # Add a dummy widget to match the tabs spacing
         self.task_list_tabs_spacer = SegmentedWidget()
-        self.task_list_tabs_spacer.addItem("Task List", "Task List")
-        self.task_list_tabs_spacer.setCurrentItem("Task List")
+        self.task_list_tabs_spacer.addItem("task_list", tr("generator.task_list"))
+        self.task_list_tabs_spacer.setCurrentItem("task_list")
         self.task_list_tabs_spacer.setEnabled(False)
         right_layout.addWidget(self.task_list_tabs_spacer)
         
@@ -200,7 +222,7 @@ class GeneratorPage(QWidget):
         main_layout.addWidget(right_panel, 1)
 
         # Initialize state
-        self.on_tab_changed(self.model_tabs.currentItem().text())
+        self.on_tab_changed(self.model_tabs.currentItem())
 
     def keyPressEvent(self, event):
         if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_V:
@@ -224,21 +246,78 @@ class GeneratorPage(QWidget):
             bg_color = "rgb(255, 255, 255)"
         card_widget.setStyleSheet(f"CardWidget {{ background-color: {bg_color}; }}")
 
+    def _is_nano_model(self, model_name):
+        return model_name.startswith("nano-banana")
+
+    def _is_completion_model(self, model_name):
+        return model_name.startswith("gpt-image") or model_name.startswith("sora")
+
+    def get_tab_for_model(self, model_name):
+        for tab_name, models in self.TAB_MODELS.items():
+            if model_name in models:
+                return tab_name
+        if model_name.startswith("nano-banana-pro"):
+            return TAB_BANANA_PRO
+        if model_name.startswith("nano-banana"):
+            return TAB_BANANA_1
+        return TAB_GPT_IMAGE
+
+    def _set_combo_items(self, combo, items, preferred=None):
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItems(items)
+        if preferred in items:
+            combo.setCurrentText(preferred)
+        elif items:
+            combo.setCurrentText(items[0])
+        combo.blockSignals(False)
+
+    def _normalize_tab_key(self, tab_key_or_text):
+        if tab_key_or_text in self.TAB_MODELS:
+            return tab_key_or_text
+
+        tab_display_map = {
+            tr("generator.tab.banana_1"): TAB_BANANA_1,
+            tr("generator.tab.banana_pro"): TAB_BANANA_PRO,
+            tr("generator.tab.gpt_image"): TAB_GPT_IMAGE,
+            "Banana 1": TAB_BANANA_1,
+            "Banana Pro": TAB_BANANA_PRO,
+            "GPT Image": TAB_GPT_IMAGE,
+        }
+        return tab_display_map.get(tab_key_or_text, TAB_BANANA_1)
+
+    def _update_auto_retry_hint(self, model_name):
+        if model_name in self.VIP_MODELS:
+            if cfg.get("vip_moderation_auto_retry", False):
+                self.auto_retry_hint.setText(tr("generator.vip_hint_enabled"))
+            else:
+                self.auto_retry_hint.setText(tr("generator.vip_hint_disabled"))
+            self.auto_retry_hint.show()
+        else:
+            self.auto_retry_hint.hide()
+
     def on_tab_changed(self, tab_name):
+        if hasattr(tab_name, "routeKey"):
+            route_key = tab_name.routeKey
+            tab_name = route_key() if callable(route_key) else route_key
+        elif hasattr(tab_name, "text"):
+            text = tab_name.text
+            tab_name = text() if callable(text) else text
+        elif not isinstance(tab_name, str):
+            tab_name = str(tab_name)
+
+        tab_name = self._normalize_tab_key(tab_name)
+
+        self.current_tab_key = tab_name
         cfg.set("last_tab", tab_name)
         
         self.model_combo.blockSignals(True)
         self.model_combo.clear()
-        
-        if tab_name == "Banana 1":
-            self.model_combo.addItems(["nano-banana-fast", "nano-banana"])
-        elif tab_name == "Banana Pro":
-            self.model_combo.addItems(["nano-banana-pro", "nano-banana-pro-vt"])
-        elif tab_name == "GPT Image":
-            self.model_combo.addItems(["gpt-image-1.5", "sora-image"])
+
+        self.model_combo.addItems(self.TAB_MODELS.get(tab_name, []))
             
         # Restore last selected model for this tab if possible, or default
-        last_model = cfg.get(f"last_model_{tab_name}", self.model_combo.itemText(0))
+        last_model = cfg.get(f"last_model_tab_{tab_name}", self.model_combo.itemText(0))
         if self.model_combo.findText(last_model) >= 0:
             self.model_combo.setCurrentText(last_model)
         
@@ -248,27 +327,33 @@ class GeneratorPage(QWidget):
     def on_model_changed(self, model_name):
         if not model_name: return
         
-        tab_name = self.model_tabs.currentItem().text()
-        cfg.set(f"last_model_{tab_name}", model_name)
-        
-        # Typo fix: Banana 1 or Banana Pro
-        is_banana = tab_name in ["Banana 1", "Banana Pro"]
-        is_gpt = tab_name == "GPT Image"
-        is_pro = tab_name == "Banana Pro"
-        
-        self.ratio_label.setVisible(is_banana)
-        self.ratio_combo.setVisible(is_banana)
-        
-        self.size_label.setVisible(is_pro)
-        self.size_combo.setVisible(is_pro)
-        
-        self.variants_label.setVisible(is_gpt)
-        self.variants_combo.setVisible(is_gpt)
-        
-        # GPT Image 1.5 specific
+        tab_name = getattr(self, "current_tab_key", TAB_BANANA_1)
+        cfg.set(f"last_model_tab_{tab_name}", model_name)
+
+        is_nano = self._is_nano_model(model_name)
+        is_completion = self._is_completion_model(model_name)
+        size_options = self.NANO_IMAGE_SIZE_OPTIONS.get(model_name)
+
+        self.ratio_label.setVisible(is_nano)
+        self.ratio_combo.setVisible(is_nano)
+
+        show_size = bool(size_options)
+        self.size_label.setVisible(show_size)
+        self.size_combo.setVisible(show_size)
+        if show_size:
+            selected_size = cfg.get("nano_banana_image_size", "1K")
+            if selected_size not in size_options:
+                selected_size = size_options[0]
+            self._set_combo_items(self.size_combo, size_options, selected_size)
+
+        self.variants_label.setVisible(is_completion)
+        self.variants_combo.setVisible(is_completion)
+
         is_gpt_1_5 = model_name == "gpt-image-1.5"
         self.gpt_size_label.setVisible(is_gpt_1_5)
         self.gpt_size_combo.setVisible(is_gpt_1_5)
+
+        self._update_auto_retry_hint(model_name)
 
     def update_text_formatting(self):
         self.prompt_widget.update_text_formatting()
@@ -276,24 +361,24 @@ class GeneratorPage(QWidget):
     def on_generate(self):
         prompt = self.prompt_widget.get_prompt()
         if not prompt:
-            InfoBar.warning(title="Warning", content="Please enter a prompt.", parent=self, position=InfoBarPosition.TOP_RIGHT)
+            InfoBar.warning(title=tr("common.warning"), content=tr("generator.enter_prompt_warning"), parent=self, position=InfoBarPosition.TOP_RIGHT)
             return
 
         model = self.model_combo.currentText()
-        tab_name = self.model_tabs.currentItem().text()
         
-        # Get params based on active tab/model
+        # Get params based on active model
         ratio = "auto"
         size = "1K"
         variants = 1
-        
-        if tab_name in ["Banana 1", "Banana Pro"]:
+
+        if self._is_nano_model(model):
             ratio = self.ratio_combo.currentText()
             cfg.set("nano_banana_aspect_ratio", ratio)
-            if tab_name == "Banana Pro":
+
+            if model in self.NANO_IMAGE_SIZE_OPTIONS:
                 size = self.size_combo.currentText()
                 cfg.set("nano_banana_image_size", size)
-        elif tab_name == "GPT Image":
+        elif self._is_completion_model(model):
             variants = int(self.variants_combo.currentText())
             if model == "gpt-image-1.5":
                 size = self.gpt_size_combo.currentText()
@@ -302,10 +387,10 @@ class GeneratorPage(QWidget):
         parallel_count = self.parallel_slider.value()
         
         # For GPT/Sora models with variants, warn about parallel execution
-        if tab_name == "GPT Image" and variants > 1 and parallel_count > 1:
+        if self._is_completion_model(model) and variants > 1 and parallel_count > 1:
             InfoBar.warning(
-                title="Note", 
-                content=f"Generating {variants} variants. Parallel tasks limited to 1 to avoid confusion.",
+                title=tr("common.note"), 
+                content=tr("generator.parallel_note", variants=variants),
                 parent=self, 
                 position=InfoBarPosition.TOP_RIGHT
             )
@@ -375,7 +460,7 @@ class GeneratorPage(QWidget):
         if success:
             task_widget.set_success(result)
         else:
-            task_widget.set_failed(msg)
+            task_widget.set_failed(result, msg)
 
     def cleanup_worker(self, task_widget):
         task_manager.unregister_worker(task_widget)
