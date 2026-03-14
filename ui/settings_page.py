@@ -1,9 +1,11 @@
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QFileDialog, QLabel, QSpinBox
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QFileDialog, QLabel
 from qfluentwidgets import (ScrollArea, SettingCardGroup, LineEdit, PushSettingCard, SettingCard, Slider, ComboBox,
                             FluentIcon, InfoBar, InfoBarPosition, PrimaryPushButton, SwitchSettingCard)
 
 from core.config import cfg
+from core.i18n import tr, language_items, normalize_language
+from core.model_catalog import VIP_MODELS
 
 class SettingsPage(ScrollArea):
     def __init__(self):
@@ -24,12 +26,34 @@ class SettingsPage(ScrollArea):
         self.layout.setSpacing(20)
 
         # General Settings
-        self.general_group = SettingCardGroup("General Configuration", self.container)
+        self.general_group = SettingCardGroup(tr("settings.general"), self.container)
+
+        self.language_card = SettingCard(
+            FluentIcon.GLOBE,
+            tr("settings.language.title"),
+            tr("settings.language.content"),
+            self.general_group
+        )
+        self.language_combo = ComboBox(self.language_card)
+        self.language_code_by_label = {}
+        current_language = normalize_language(cfg.get("language", "en"))
+        current_label = None
+        for code, label in language_items():
+            self.language_combo.addItem(label)
+            self.language_code_by_label[label] = code
+            if code == current_language:
+                current_label = label
+        if current_label:
+            self.language_combo.setCurrentText(current_label)
+        self.language_combo.setFixedWidth(150)
+        self.language_card.hBoxLayout.addWidget(self.language_combo)
+        self.language_card.hBoxLayout.addSpacing(16)
+        self.general_group.addSettingCard(self.language_card)
         
         self.retries_card = SettingCard(
             FluentIcon.SYNC,
-            "Max Retries",
-            "Maximum number of auto-retries for failed tasks",
+            tr("settings.retries.title"),
+            tr("settings.retries.content"),
             self.general_group
         )
         
@@ -46,12 +70,21 @@ class SettingsPage(ScrollArea):
         self.retries_card.hBoxLayout.addSpacing(16)
         
         self.general_group.addSettingCard(self.retries_card)
+
+        self.vip_retry_switch = SwitchSettingCard(
+            FluentIcon.SYNC,
+            tr("settings.vip_retry.title"),
+            f"{tr('settings.vip_retry.content')}\n{tr('settings.vip_retry.models', models=', '.join(VIP_MODELS))}",
+            parent=self.general_group
+        )
+        self.vip_retry_switch.setChecked(cfg.get("vip_moderation_auto_retry", False))
+        self.general_group.addSettingCard(self.vip_retry_switch)
         
         # History Items Per Page
         self.history_items_card = SettingCard(
             FluentIcon.HISTORY,
-            "History Items Per Page",
-            "Number of items displayed per page in history (1-100)",
+            tr("settings.history.title"),
+            tr("settings.history.content"),
             self.general_group
         )
         
@@ -71,12 +104,12 @@ class SettingsPage(ScrollArea):
         self.layout.addWidget(self.general_group)
 
         # Text Format Settings
-        self.format_group = SettingCardGroup("Text Format", self.container)
+        self.format_group = SettingCardGroup(tr("settings.format"), self.container)
         
         self.format_switch = SwitchSettingCard(
             FluentIcon.EDIT,
-            "Enable Text Format",
-            "Format prompt text automatically",
+            tr("settings.format_enable.title"),
+            tr("settings.format_enable.content"),
             parent=self.format_group
         )
         self.format_switch.setChecked(cfg.get("text_format_enabled", False))
@@ -84,8 +117,8 @@ class SettingsPage(ScrollArea):
         
         self.font_size_card = SettingCard(
             FluentIcon.FONT,
-            "Font Size",
-            "Size of formatted text (8-72)",
+            tr("settings.font_size.title"),
+            tr("settings.font_size.content"),
             self.format_group
         )
         self.font_size_slider = Slider(Qt.Horizontal, self.font_size_card)
@@ -106,8 +139,8 @@ class SettingsPage(ScrollArea):
         # Font Family
         self.font_family_card = SettingCard(
             FluentIcon.FONT,
-            "Font Family",
-            "Select font for formatted text",
+            tr("settings.font_family.title"),
+            tr("settings.font_family.content"),
             self.format_group
         )
         self.font_family_combo = ComboBox(self.font_family_card)
@@ -121,8 +154,8 @@ class SettingsPage(ScrollArea):
         
         self.wrap_switch = SwitchSettingCard(
             FluentIcon.ALIGNMENT,
-            "Auto Text Wrap",
-            "Automatically wrap text after formatting",
+            tr("settings.wrap.title"),
+            tr("settings.wrap.content"),
             parent=self.format_group
         )
         self.wrap_switch.setChecked(cfg.get("text_auto_wrap", True))
@@ -130,13 +163,13 @@ class SettingsPage(ScrollArea):
         self.layout.addWidget(self.format_group)
 
         # API Settings
-        self.api_group = SettingCardGroup("API Configuration", self.container)
+        self.api_group = SettingCardGroup(tr("settings.api"), self.container)
         
         # Base URL
         self.url_card = PushSettingCard(
-            "Edit",
+            tr("settings.common.edit"),
             FluentIcon.GLOBE,
-            "API Base URL",
+            tr("settings.api_url.title"),
             cfg.get("api_base_url"),
             self.api_group
         )
@@ -153,10 +186,10 @@ class SettingsPage(ScrollArea):
         
         # API Key
         self.key_card = PushSettingCard(
-            "Edit",
+            tr("settings.common.edit"),
             FluentIcon.VPN,
-            "API Key",
-            "Enter your API Key here",
+            tr("settings.api_key.title"),
+            tr("settings.api_key.content"),
             self.api_group
         )
         self.key_edit = LineEdit()
@@ -171,12 +204,12 @@ class SettingsPage(ScrollArea):
         self.layout.addWidget(self.api_group)
 
         # Output Settings
-        self.output_group = SettingCardGroup("Output Configuration", self.container)
+        self.output_group = SettingCardGroup(tr("settings.output"), self.container)
         
         self.path_card = PushSettingCard(
-            "Choose Folder",
+            tr("settings.output.choose"),
             FluentIcon.FOLDER,
-            "Output Folder",
+            tr("settings.output.title"),
             cfg.get("output_folder"),
             self.output_group
         )
@@ -186,7 +219,7 @@ class SettingsPage(ScrollArea):
         self.layout.addWidget(self.output_group)
 
         # Save Button
-        self.save_btn = PrimaryPushButton("Save Settings")
+        self.save_btn = PrimaryPushButton(tr("settings.save"))
         self.save_btn.clicked.connect(self.save_settings)
         self.save_btn.setFixedWidth(200)
         self.layout.addWidget(self.save_btn, 0, Qt.AlignRight)
@@ -204,7 +237,7 @@ class SettingsPage(ScrollArea):
             self.history_items_slider.setFixedWidth(max(slider_width, 100))
 
     def choose_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Output Folder", cfg.get("output_folder"))
+        folder = QFileDialog.getExistingDirectory(self, tr("settings.dialog.select_folder"), cfg.get("output_folder"))
         if folder:
             self.path_card.setContent(folder)
             cfg.set("output_folder", folder)
@@ -212,10 +245,16 @@ class SettingsPage(ScrollArea):
     def save_settings(self):
         url = self.url_edit.text().strip()
         key = self.key_edit.text().strip()
+        selected_language_label = self.language_combo.currentText()
+        new_language = self.language_code_by_label.get(selected_language_label, "en")
+        old_language = normalize_language(cfg.get("language", "en"))
+        language_changed = new_language != old_language
         
         cfg.set("api_base_url", url)
         cfg.set("api_key", key)
+        cfg.set("language", new_language)
         cfg.set("max_retries", self.retries_slider.value())
+        cfg.set("vip_moderation_auto_retry", self.vip_retry_switch.isChecked())
         cfg.set("history_items_per_page", self.history_items_slider.value())
         cfg.set("text_format_enabled", self.format_switch.isChecked())
         cfg.set("text_font_size", self.font_size_slider.value())
@@ -235,11 +274,11 @@ class SettingsPage(ScrollArea):
                     cfg.set("nano_banana_aspect_ratio", gen_page.ratio_combo.currentText())
                     cfg.set("nano_banana_image_size", gen_page.size_combo.currentText())
                 elif model == "gpt-image-1.5":
-                    cfg.set("gpt_image_size", gen_page.size_combo_gpt.currentText())
+                    cfg.set("gpt_image_size", gen_page.gpt_size_combo.currentText())
                 
                 # Save shared parameters
                 cfg.set("auto_retry_on_failure", gen_page.auto_retry_cb.isChecked())
-                cfg.set("parallel_tasks", gen_page.parallel_spinbox.value())
+                cfg.set("parallel_tasks", gen_page.parallel_slider.value())
         except:
             pass
         
@@ -252,8 +291,8 @@ class SettingsPage(ScrollArea):
             pass
         
         InfoBar.success(
-            title="Saved",
-            content="Settings have been saved successfully.",
+            title=tr("settings.saved_title"),
+            content=tr("settings.saved_content_restart") if language_changed else tr("settings.saved_content"),
             parent=self,
             position=InfoBarPosition.TOP_RIGHT
         )

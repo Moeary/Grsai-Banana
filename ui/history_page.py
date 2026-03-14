@@ -7,11 +7,12 @@ from qfluentwidgets import (CardWidget, StrongBodyLabel, BodyLabel, CaptionLabel
 
 from core.history_manager import history_mgr
 from core.config import cfg
+from core.i18n import tr
 
 class TaskDetailsDialog(MessageBoxBase):
     def __init__(self, task_data, parent=None):
         super().__init__(parent)
-        self.titleLabel = SubtitleLabel("Task Details", self)
+        self.titleLabel = SubtitleLabel(tr("history.task_details"), self)
         self.viewLayout.addWidget(self.titleLabel)
         
         # Content
@@ -86,7 +87,7 @@ class TaskDetailsDialog(MessageBoxBase):
         
         self.viewLayout.addWidget(self.content)
         
-        self.yesButton.setText("Close")
+        self.yesButton.setText(tr("history.close"))
         self.cancelButton.hide()
         self.widget.setMinimumWidth(600)
         self.widget.setMinimumHeight(500)
@@ -126,7 +127,7 @@ class HistoryItem(CardWidget):
             self.thumb.setCursor(Qt.PointingHandCursor)
             self.thumb.mousePressEvent = self.on_thumb_click
         else:
-            self.thumb.setText("No Image")
+            self.thumb.setText(tr("history.no_image"))
             self.thumb.setAlignment(Qt.AlignCenter)
             
         layout.addWidget(self.thumb)
@@ -147,7 +148,7 @@ class HistoryItem(CardWidget):
         elided_text = metrics.elidedText(task_data["prompt"], Qt.ElideRight, 400) # Approx width
         self.prompt_label.setText(elided_text)
         # Tooltip for quick view
-        self.prompt_label.setToolTip("Click to view full details")
+        self.prompt_label.setToolTip(tr("history.prompt_tooltip"))
         
         info_layout.addWidget(self.prompt_label)
         info_layout.addWidget(BodyLabel(f"Model: {task_data['model']} | Size: {task_data['image_size']}"))
@@ -176,13 +177,13 @@ class HistoryItem(CardWidget):
         btn_layout.setSpacing(5)
         
         # Regenerate Button
-        regen_btn = TransparentPushButton(FluentIcon.SYNC, "Regenerate")
-        regen_btn.setToolTip("Run this task again")
+        regen_btn = TransparentPushButton(FluentIcon.SYNC, tr("history.regenerate"))
+        regen_btn.setToolTip(tr("history.regenerate"))
         regen_btn.clicked.connect(self.on_regenerate)
         btn_layout.addWidget(regen_btn)
 
         if task_data["status"] == "succeeded" and task_data["result_path"]:
-            open_btn = TransparentPushButton(FluentIcon.FOLDER, "Open Folder")
+            open_btn = TransparentPushButton(FluentIcon.FOLDER, tr("history.open_folder"))
             open_btn.clicked.connect(self.open_folder)
             btn_layout.addWidget(open_btn)
             
@@ -206,8 +207,6 @@ class HistoryItem(CardWidget):
             folder = os.path.dirname(self.task_data["result_path"])
             QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
             
-from PySide6.QtCore import QUrl
-
 class HistoryPage(QWidget):
     def __init__(self):
         super().__init__()
@@ -224,7 +223,7 @@ class HistoryPage(QWidget):
         top_layout = QHBoxLayout()
         top_layout.setContentsMargins(20, 10, 20, 0)
         top_layout.addStretch()
-        self.refresh_btn = TransparentPushButton(FluentIcon.SYNC, "Refresh")
+        self.refresh_btn = TransparentPushButton(FluentIcon.SYNC, tr("history.refresh"))
         self.refresh_btn.clicked.connect(self.refresh_data)
         top_layout.addWidget(self.refresh_btn)
         layout.addLayout(top_layout)
@@ -247,12 +246,12 @@ class HistoryPage(QWidget):
         pagination_layout.setContentsMargins(0, 10, 0, 10)
         pagination_layout.setAlignment(Qt.AlignCenter)
         
-        self.prev_btn = TransparentPushButton(FluentIcon.LEFT_ARROW, "Previous")
+        self.prev_btn = TransparentPushButton(FluentIcon.LEFT_ARROW, tr("history.previous"))
         self.prev_btn.clicked.connect(self.prev_page)
         
         self.page_label = StrongBodyLabel("1 / 1")
         
-        self.next_btn = TransparentPushButton(FluentIcon.RIGHT_ARROW, "Next")
+        self.next_btn = TransparentPushButton(FluentIcon.RIGHT_ARROW, tr("history.next"))
         self.next_btn.clicked.connect(self.next_page)
         
         pagination_layout.addWidget(self.prev_btn)
@@ -281,11 +280,15 @@ class HistoryPage(QWidget):
         self.load_history()
 
     def load_history(self):
-        # Clear existing
+        # Clear existing - force cleanup to free memory
         for i in range(self.vbox.count()):
             item = self.vbox.itemAt(i)
             if item.widget():
-                item.widget().deleteLater()
+                widget = item.widget()
+                # Clear pixmap to free memory before deletion
+                if hasattr(widget, 'thumb') and hasattr(widget.thumb, 'clear'):
+                    widget.thumb.clear()
+                widget.deleteLater()
                 
         all_tasks = history_mgr.get_all_tasks()
         total_items = len(all_tasks)
@@ -303,7 +306,7 @@ class HistoryPage(QWidget):
         current_tasks = all_tasks[start_idx:end_idx]
         
         if not current_tasks:
-            self.vbox.addWidget(BodyLabel("No history yet."))
+            self.vbox.addWidget(BodyLabel(tr("history.no_history")))
         else:
             for task in current_tasks:
                 item = HistoryItem(task)

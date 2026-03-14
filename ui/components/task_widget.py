@@ -1,11 +1,15 @@
 from PySide6.QtCore import Qt, Signal, QUrl, QSize, QTimer
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFrame, QStackedWidget, QScrollArea)
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFrame, QStackedWidget)
 from PySide6.QtGui import QPixmap, QIcon, QDesktopServices
-from qfluentwidgets import (StrongBodyLabel, BodyLabel, TransparentToolButton, ProgressRing, FluentIcon, isDarkTheme, qconfig)
+from qfluentwidgets import (StrongBodyLabel, BodyLabel, TransparentToolButton, ProgressRing, FluentIcon, isDarkTheme, qconfig, ScrollArea)
 
 from core.config import cfg
+from core.model_catalog import VIP_MODELS
 
 class TaskWidget(QFrame):
+    VIP_RESTRICTED_MODELS = set(VIP_MODELS)
+    MODERATION_FAILURE_REASONS = {"output_moderation", "input_moderation"}
+
     retry_requested = Signal(object)
     regenerate_requested = Signal(object)
 
@@ -39,6 +43,11 @@ class TaskWidget(QFrame):
         
         self.status_label = BodyLabel("Attempt: 1")
         layout.addWidget(self.status_label, 1)
+        
+        # Add variants info label (for GPT/Sora models)
+        self.variants_label = BodyLabel("")
+        self.variants_label.hide()
+        layout.addWidget(self.variants_label)
         
         self.status_stack = QStackedWidget()
         self.status_stack.setFixedSize(50, 50)
@@ -95,6 +104,17 @@ class TaskWidget(QFrame):
         self.status_text = status
         self.status_label.setText(f"Attempt {self.attempt_count + 1}: {status}")
         self.progress_ring.setToolTip(f"Status: {status}")
+    
+    def set_variants_info(self, variants_count, total_images=None):
+        """Display variants information"""
+        if variants_count > 1:
+            if total_images:
+                self.variants_label.setText(f"Variants: {variants_count} | Total Images: {total_images}")
+            else:
+                self.variants_label.setText(f"Variants: {variants_count}")
+            self.variants_label.show()
+        else:
+            self.variants_label.hide()
         
     def set_success(self, filepath):
         self.result_path = filepath
@@ -107,28 +127,52 @@ class TaskWidget(QFrame):
         else:
             self.status_label.setText(f"✓ Success on retry {self.attempt_count}")
         
-        pixmap = QPixmap(filepath)
-        if not pixmap.isNull():
-            icon = QIcon(pixmap)
-            self.result_btn.setIcon(icon)
+        # Load scaled thumbnail to reduce memory usage
+        try:
+            # Load at reduced size directly to save memory
+            pixmap = QPixmap(filepath)
+            if not pixmap.isNull():
+                # Scale down to thumbnail size (40 height) to save memory
+                scaled_pixmap = pixmap.scaledToHeight(40, Qt.SmoothTransformation)
+                icon = QIcon(scaled_pixmap)
+                self.result_btn.setIcon(icon)
+        except Exception as e:
+            print(f"[TaskWidget] Error loading thumbnail: {e}")
         
         self.result_btn.setContextMenuPolicy(Qt.CustomContextMenu)
         self.result_btn.customContextMenuRequested.connect(self.show_result_menu)
             
         self.update_style("success")
 
-    def set_failed(self, reason):
+    def _can_auto_retry(self, failure_reason):
+        if not self.auto_retry:
+            return False
+        if self.retry_count >= self.max_retries:
+            return False
+
+        model_name = self.params.get("model", "")
+        is_vip_restricted = (
+            model_name in self.VIP_RESTRICTED_MODELS
+            and failure_reason in self.MODERATION_FAILURE_REASONS
+            and not cfg.get("vip_moderation_auto_retry", False)
+        )
+
+        return not is_vip_restricted
+
+    def set_failed(self, reason, failure_reason=None):
         try:
             self.status_stack.setCurrentIndex(2)
             self.retry_btn.setToolTip(f"Failed: {reason}. Click to retry.")
             self.status_label.setText(f"✗ Failed: {reason}")
             self.update_style("failed")
             
-            if self.auto_retry and self.retry_count < self.max_retries:
+            if self._can_auto_retry(failure_reason):
                 print(f"[TaskWidget] Auto-retrying... ({self.retry_count + 1}/{self.max_retries})")
                 self.retry_count += 1
                 self.attempt_count += 1
                 self.retry_timer.start(1000)
+            elif self.auto_retry and failure_reason in self.MODERATION_FAILURE_REASONS and self.params.get("model", "") in self.VIP_RESTRICTED_MODELS:
+                self.status_label.setText(f"✗ Failed: {reason} (Auto-retry blocked for VIP moderation)")
         except Exception as e:
             print(f"[TaskWidget] Error in set_failed: {e}")
     
@@ -160,6 +204,20 @@ class TaskWidget(QFrame):
 
     def regenerate(self):
         self.regenerate_requested.emit(self)
+    
+    def cleanup(self):
+        """Cleanup resources when task widget is no longer needed"""
+        try:
+            # Only disconnect signals, don't clear UI elements
+            self.retry_timer.stop()
+            try:
+                self.retry_timer.timeout.disconnect()
+            except:
+                pass
+            # Clear only internal parameters
+            self.params = {}
+        except Exception as e:
+            print(f"[TaskWidget] Error in cleanup: {e}")
 
 class TaskListWidget(QWidget):
     def __init__(self, parent=None):
@@ -171,9 +229,8 @@ class TaskListWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         
-        self.task_scroll = QScrollArea()
+        self.task_scroll = ScrollArea()
         self.task_scroll.setWidgetResizable(True)
-        # Add gray background to the scroll area
         self.update_style()
         qconfig.themeChanged.connect(self.update_style)
         
@@ -185,20 +242,21 @@ class TaskListWidget(QWidget):
         
         self.task_scroll.setWidget(self.task_container)
         layout.addWidget(self.task_scroll)
-
+    
     def update_style(self):
+        """Update scrollarea style to match prompt widget"""
         if isDarkTheme():
             bg_color = "rgba(255, 255, 255, 0.06)"
             border_color = "rgba(255, 255, 255, 0.1)"
         else:
             bg_color = "rgb(255, 255, 255)"
             border_color = "rgba(0, 0, 0, 0.12)"
-            
+        
         self.task_scroll.setStyleSheet(f"""
             QScrollArea {{
                 background-color: {bg_color};
                 border: 1px solid {border_color};
-                border-radius: 8px;
+                border-radius: 6px;
             }}
             QWidget#qt_scrollarea_viewport {{
                 background-color: transparent;

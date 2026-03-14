@@ -3,8 +3,13 @@ import json
 import os
 import base64
 from core.config import cfg
+from core.model_catalog import NANO_MODELS, NANO_IMAGE_SIZE_OPTIONS, COMPLETION_MODELS
 
 class ApiClient:
+    LEGACY_MODEL_ALIASES = {
+        "gemini-2.5-flash-image": "nano-banana-fast"
+    }
+    LEGACY_COMPLETION_MODELS = {"sora-2", "veo3.1-fast-1080p"}
     def __init__(self):
         pass
 
@@ -13,6 +18,13 @@ class ApiClient:
             "Content-Type": "application/json",
             "Authorization": f"Bearer {cfg.get('api_key')}"
         }
+
+    def _get_base_url(self):
+        base_url = cfg.get("api_base_url", "").strip()
+        return base_url or "https://grsai.dakka.com.cn"
+
+    def _normalize_model(self, model):
+        return self.LEGACY_MODEL_ALIASES.get(model, model)
 
     def _convert_image_to_data_uri(self, image_path):
         """Convert local image file to data URI for API submission"""
@@ -29,6 +41,8 @@ class ApiClient:
 
     def submit_task(self, prompt, model, aspect_ratio="auto", image_size="1K", ref_image_urls=None, variants=1):
         """Submit task to appropriate API based on model"""
+        model = self._normalize_model(model)
+
         # Convert local file paths to data URIs for API submission
         if ref_image_urls:
             converted_urls = []
@@ -42,25 +56,27 @@ class ApiClient:
             ref_image_urls = converted_urls if converted_urls else None
         
         # Determine which API to use
-        if model.startswith("nano-banana"):
+        if model in NANO_MODELS:
             return self._submit_nano_banana(prompt, model, aspect_ratio, image_size, ref_image_urls)
-        elif model in ["gpt-image-1.5", "sora-image"]:
-            return self._submit_gpt_image(prompt, model, aspect_ratio, ref_image_urls, variants)
+        elif model in COMPLETION_MODELS or model in self.LEGACY_COMPLETION_MODELS:
+            return self._submit_gpt_image(prompt, model, image_size, ref_image_urls, variants)
         else:
             return {"code": -1, "msg": f"Unknown model: {model}"}
 
     def _submit_nano_banana(self, prompt, model, aspect_ratio, image_size, ref_image_urls):
         """Submit to Nano Banana API"""
-        url = f"{cfg.get('api_base_url').rstrip('/')}/v1/draw/nano-banana"
+        url = f"{self._get_base_url().rstrip('/')}/v1/draw/nano-banana"
         
         payload = {
             "model": model,
             "prompt": prompt,
             "aspectRatio": aspect_ratio,
-            "imageSize": image_size,
             "webHook": "-1",  # Use -1 to get ID immediately for polling
             "shutProgress": False
         }
+
+        if model in NANO_IMAGE_SIZE_OPTIONS:
+            payload["imageSize"] = image_size
 
         if ref_image_urls:
             payload["urls"] = ref_image_urls
@@ -74,7 +90,7 @@ class ApiClient:
 
     def _submit_gpt_image(self, prompt, model, size, ref_image_urls, variants):
         """Submit to GPT Image / Sora API"""
-        url = f"{cfg.get('api_base_url').rstrip('/')}/v1/draw/completions"
+        url = f"{self._get_base_url().rstrip('/')}/v1/draw/completions"
         
         payload = {
             "model": model,
@@ -97,7 +113,7 @@ class ApiClient:
 
     def get_task_result(self, task_id):
         """Get task result - works for both APIs"""
-        url = f"{cfg.get('api_base_url').rstrip('/')}/v1/draw/result"
+        url = f"{self._get_base_url().rstrip('/')}/v1/draw/result"
         payload = {"id": task_id}
 
         try:

@@ -114,16 +114,28 @@ class TaskWorker(QThread):
                                     if ".jpg" in img_url: ext = "jpg"
                                     if ".jpeg" in img_url: ext = "jpeg"
                                     
-                                    # For multiple variants, add index suffix
-                                    if len(results) > 1:
-                                        filename = f"{timestamp}_{idx+1}.{ext}"
-                                    else:
-                                        filename = f"{timestamp}.{ext}"
-                                    
                                     output_dir = cfg.get("output_folder")
                                     if not os.path.exists(output_dir):
                                         os.makedirs(output_dir)
+                                    
+                                    # Generate filename with conflict resolution
+                                    if len(results) > 1:
+                                        # Multiple images from variants - use variant index
+                                        filename = f"{timestamp}_{idx}.{ext}" if idx > 0 else f"{timestamp}.{ext}"
+                                    else:
+                                        # Single image - check for conflicts with other concurrent tasks
+                                        base_filename = f"{timestamp}.{ext}"
+                                        filepath = os.path.join(output_dir, base_filename)
                                         
+                                        # Check for file conflicts and add suffix if needed
+                                        if os.path.exists(filepath):
+                                            counter = 1
+                                            while os.path.exists(os.path.join(output_dir, f"{timestamp}_{counter}.{ext}")):
+                                                counter += 1
+                                            filename = f"{timestamp}_{counter}.{ext}"
+                                        else:
+                                            filename = base_filename
+                                    
                                     filepath = os.path.join(output_dir, filename)
                                     with open(filepath, "wb") as f:
                                         f.write(img_data)
@@ -149,8 +161,11 @@ class TaskWorker(QThread):
                     elif status == "failed":
                         reason = data.get("failure_reason", "Unknown")
                         error_msg = data.get("error", "")
+                        display_reason = reason
+                        if error_msg:
+                            display_reason = f"{reason}: {error_msg}"
                         history_mgr.update_task(self.task_id, "failed", failure_reason=reason, error_message=error_msg)
-                        self.finished_signal.emit(False, reason, reason)
+                        self.finished_signal.emit(False, display_reason, reason)
                         return
                 except Exception as e:
                     print(f"[TaskWorker] Processing error: {e}")
