@@ -251,8 +251,7 @@ class GeneratorPage(QWidget):
         tab_name = self.model_tabs.currentItem().text()
         cfg.set(f"last_model_{tab_name}", model_name)
         
-        # Visibility Logic
-        is_banana = tab_name in ["Banana 1", "Banana 1"] # Typo fix: Banana 1 or Banana Pro
+        # Typo fix: Banana 1 or Banana Pro
         is_banana = tab_name in ["Banana 1", "Banana Pro"]
         is_gpt = tab_name == "GPT Image"
         is_pro = tab_name == "Banana Pro"
@@ -302,6 +301,16 @@ class GeneratorPage(QWidget):
 
         parallel_count = self.parallel_slider.value()
         
+        # For GPT/Sora models with variants, warn about parallel execution
+        if tab_name == "GPT Image" and variants > 1 and parallel_count > 1:
+            InfoBar.warning(
+                title="Note", 
+                content=f"Generating {variants} variants. Parallel tasks limited to 1 to avoid confusion.",
+                parent=self, 
+                position=InfoBarPosition.TOP_RIGHT
+            )
+            parallel_count = 1
+        
         cfg.set("auto_retry_on_failure", self.auto_retry_cb.isChecked())
         cfg.set("parallel_tasks", parallel_count)
         
@@ -325,6 +334,12 @@ class GeneratorPage(QWidget):
         self.task_counter += 1
         task_widget = TaskWidget(self.task_counter, prompt, params)
         task_widget.auto_retry = self.auto_retry_cb.isChecked()
+        
+        # Show variants info for GPT/Sora models
+        variants = params.get("variants", 1)
+        if variants > 1:
+            task_widget.set_variants_info(variants)
+        
         task_widget.retry_requested.connect(self.retry_task)
         task_widget.regenerate_requested.connect(self.regenerate_task)
         

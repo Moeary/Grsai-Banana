@@ -281,11 +281,15 @@ class HistoryPage(QWidget):
         self.load_history()
 
     def load_history(self):
-        # Clear existing
+        # Clear existing - force cleanup to free memory
         for i in range(self.vbox.count()):
             item = self.vbox.itemAt(i)
             if item.widget():
-                item.widget().deleteLater()
+                widget = item.widget()
+                # Clear pixmap to free memory before deletion
+                if hasattr(widget, 'thumb') and hasattr(widget.thumb, 'clear'):
+                    widget.thumb.clear()
+                widget.deleteLater()
                 
         all_tasks = history_mgr.get_all_tasks()
         total_items = len(all_tasks)
