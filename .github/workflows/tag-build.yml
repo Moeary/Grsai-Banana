@@ -30,7 +30,7 @@ jobs:
 
       - name: Build executable
         run: |
-          python -m nuitka --standalone --onefile --enable-plugin=pyside6 --windows-icon-from-ico=logo.ico --include-data-file=logo.ico=logo.ico --output-dir=dist --remove-output main.py
+          python -m nuitka --standalone --onefile --enable-plugin=pyside6 --windows-icon-from-ico=logo.ico --include-data-file=logo.ico=logo.ico --output-dir=dist --remove-output --assume-yes-for-downloads main.py
           Move-Item -Path dist/main.exe -Destination dist/Grsai-Banana-windows-x64.exe -Force
 
       - name: Upload artifact
@@ -68,7 +68,7 @@ jobs:
       - name: Build Linux binary and package RPM
         shell: bash
         run: |
-          python -m nuitka --standalone --onefile --enable-plugin=pyside6 --include-data-file=logo.ico=logo.ico --output-dir=dist --remove-output main.py
+          python -m nuitka --standalone --onefile --enable-plugin=pyside6 --include-data-file=logo.ico=logo.ico --output-dir=dist --remove-output --assume-yes-for-downloads main.py
 
           if [ -f dist/main.bin ]; then
             mv dist/main.bin dist/grsai-banana
