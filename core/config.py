@@ -17,6 +17,7 @@ DEFAULT_CONFIG = {
     "auto_retry_on_failure": False,
     "vip_moderation_auto_retry": False,
     "parallel_tasks": 1,
+    "comic_parallel_tasks": 2,
     "max_retries": 5,
     "theme": "auto",
     "language": "en",
@@ -24,6 +25,12 @@ DEFAULT_CONFIG = {
     "text_font_size": 12,
     "text_font_family": "Arial",
     "text_auto_wrap": True,
+    "comic_story_model": "gemini-3.1-pro",
+    "comic_image_model": "nano-banana-fast",
+    "comic_page_count": 6,
+    "comic_aspect_ratio": "3:4",
+    "comic_image_size": "1K",
+    "comic_last_project": "",
     # History page settings
     "history_items_per_page": 5,
     "last_tab": "banana_1"

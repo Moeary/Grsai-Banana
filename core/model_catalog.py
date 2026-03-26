@@ -2,6 +2,12 @@ TAB_BANANA_1 = "banana_1"
 TAB_BANANA_PRO = "banana_pro"
 TAB_GPT_IMAGE = "gpt_image"
 
+CHAT_MODELS = [
+    "gemini-3.1-pro",
+    "gemini-3-pro",
+    "gemini-2.5-pro",
+]
+
 BANANA_1_MODELS = [
     "nano-banana-fast",
     "nano-banana"
@@ -20,6 +26,8 @@ GPT_IMAGE_MODELS = [
     "gpt-image-1.5",
     "sora-image"
 ]
+
+COMIC_IMAGE_MODELS = BANANA_1_MODELS + BANANA_PRO_MODELS
 
 TAB_MODELS = {
     TAB_BANANA_1: BANANA_1_MODELS,

@@ -39,6 +39,27 @@ class ApiClient:
             print(f"Error converting image to data URI: {e}")
         return None
 
+    def chat_completion(self, model, messages, stream=False, temperature=None):
+        """Call OpenAI-compatible chat completions API."""
+        url = f"{self._get_base_url().rstrip('/')}/v1/chat/completions"
+        payload = {
+            "model": model,
+            "stream": stream,
+            "messages": messages,
+        }
+
+        if temperature is not None:
+            payload["temperature"] = temperature
+
+        try:
+            response = requests.post(url, headers=self.get_headers(), json=payload, timeout=120)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            return {"error": {"message": str(e)}}
+        except Exception as e:
+            return {"error": {"message": str(e)}}
+
     def submit_task(self, prompt, model, aspect_ratio="auto", image_size="1K", ref_image_urls=None, variants=1):
         """Submit task to appropriate API based on model"""
         model = self._normalize_model(model)

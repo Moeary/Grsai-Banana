@@ -6,6 +6,8 @@ __pycache__/
 
 config.json
 history.json
+history.db
+history.json.bak
 
 Grsai-Banana.7z
 grsai提示教程.md

@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QImageReader, QPixmap
 from PySide6.QtWidgets import QApplication, QFileDialog, QFrame, QLabel, QSizePolicy, QVBoxLayout, QWidget
 from qfluentwidgets import InfoBar, InfoBarPosition, SingleDirectionScrollArea, TransparentToolButton, FluentIcon, isDarkTheme, qconfig
@@ -11,6 +11,7 @@ from core.i18n import tr
 
 class ImageThumbnail(QWidget):
     removed = Signal(str)
+    THUMBNAIL_MAX_EDGE = 512
 
     def __init__(self, path, drop_area=None):
         super().__init__()
@@ -18,9 +19,9 @@ class ImageThumbnail(QWidget):
         self.drop_area = drop_area
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        self._thumbnail_pixmap = self._load_thumbnail(path)
-        if not self._thumbnail_pixmap.isNull() and self._thumbnail_pixmap.height() > 0:
-            self.aspect_ratio = self._thumbnail_pixmap.width() / self._thumbnail_pixmap.height()
+        thumbnail_pixmap = self._load_thumbnail(path)
+        if not thumbnail_pixmap.isNull() and thumbnail_pixmap.height() > 0:
+            self.aspect_ratio = thumbnail_pixmap.width() / thumbnail_pixmap.height()
         else:
             self.aspect_ratio = 1.0
 
@@ -32,8 +33,8 @@ class ImageThumbnail(QWidget):
         self.img_label.setScaledContents(True)
         self.img_label.setAlignment(Qt.AlignCenter)
         self.img_label.setStyleSheet("border-radius: 8px; border: 1px solid #ddd;")
-        if not self._thumbnail_pixmap.isNull():
-            self.img_label.setPixmap(self._thumbnail_pixmap)
+        if not thumbnail_pixmap.isNull():
+            self.img_label.setPixmap(thumbnail_pixmap)
 
         layout.addWidget(self.img_label)
 
@@ -50,13 +51,23 @@ class ImageThumbnail(QWidget):
 
         source_size = reader.size()
         if source_size.isValid() and source_size.width() > 0 and source_size.height() > 0:
-            target_size = source_size.scaled(1024, 1024, Qt.KeepAspectRatio)
+            target_size = source_size.scaled(self.THUMBNAIL_MAX_EDGE, self.THUMBNAIL_MAX_EDGE, Qt.KeepAspectRatio)
             if target_size.isValid() and target_size.width() > 0 and target_size.height() > 0:
                 reader.setScaledSize(target_size)
+        else:
+            reader.setScaledSize(QSize(self.THUMBNAIL_MAX_EDGE, self.THUMBNAIL_MAX_EDGE))
 
         image = reader.read()
         if image.isNull():
-            return QPixmap(path)
+            fallback = QPixmap(path)
+            if fallback.isNull():
+                return fallback
+            return fallback.scaled(
+                self.THUMBNAIL_MAX_EDGE,
+                self.THUMBNAIL_MAX_EDGE,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            )
         return QPixmap.fromImage(image)
 
     def _available_width(self):
@@ -81,6 +92,10 @@ class ImageThumbnail(QWidget):
 
     def on_remove(self):
         self.removed.emit(self.path)
+
+    def cleanup(self):
+        self.img_label.clear()
+        self.img_label.setPixmap(QPixmap())
 
 
 class ImageDropArea(QFrame):
@@ -296,15 +311,22 @@ class ImageDropArea(QFrame):
             self.image_paths.remove(path)
             widget = self.thumbnail_widgets.pop(path, None)
             if widget:
+                if hasattr(widget, "cleanup"):
+                    widget.cleanup()
                 widget.deleteLater()
             self.update_ui_state()
 
     def clear_images(self):
         self.image_paths = []
+        for widget in self.thumbnail_widgets.values():
+            if hasattr(widget, "cleanup"):
+                widget.cleanup()
         self.thumbnail_widgets.clear()
         while self.scroll_layout.count():
             item = self.scroll_layout.takeAt(0)
             if item.widget():
+                if hasattr(item.widget(), "cleanup"):
+                    item.widget().cleanup()
                 item.widget().deleteLater()
         self.update_ui_state()
         self.imageDropped.emit("")

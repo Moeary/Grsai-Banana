@@ -2,6 +2,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 from qfluentwidgets import FluentWindow, NavigationItemPosition, FluentIcon, SplashScreen, setTheme, Theme, qconfig
 
+from ui.comic_page import ComicPage
 from ui.generator_page import GeneratorPage
 from ui.history_page import HistoryPage
 from ui.settings_page import SettingsPage
@@ -24,6 +25,7 @@ class MainWindow(FluentWindow):
 
         # Create sub interfaces
         self.generator_interface = GeneratorPage()
+        self.comic_interface = ComicPage()
         self.history_interface = HistoryPage()
         self.settings_interface = SettingsPage()
 
@@ -42,6 +44,7 @@ class MainWindow(FluentWindow):
 
     def initNavigation(self):
         self.addSubInterface(self.generator_interface, FluentIcon.BRUSH, tr("nav.generator"))
+        self.addSubInterface(self.comic_interface, FluentIcon.PHOTO, tr("nav.comic"))
         self.addSubInterface(self.history_interface, FluentIcon.HISTORY, tr("nav.history"))
         
         self.navigationInterface.addItem(
@@ -68,6 +71,7 @@ class MainWindow(FluentWindow):
         print("[MainWindow] Application closing, stopping all workers...")
         task_manager.stop_all_workers()
         self.generator_interface.stop_all_workers()
+        self.comic_interface.stop_all_workers()
         super().closeEvent(event)
 
     def regenerate_task(self, task_data):
