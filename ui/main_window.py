@@ -2,6 +2,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 from qfluentwidgets import FluentWindow, NavigationItemPosition, FluentIcon, SplashScreen, setTheme, Theme, qconfig
 
+from ui.comic_page import ComicPage
 from ui.generator_page import GeneratorPage
 from ui.history_page import HistoryPage
 from ui.settings_page import SettingsPage
@@ -24,6 +25,7 @@ class MainWindow(FluentWindow):
 
         # Create sub interfaces
         self.generator_interface = GeneratorPage()
+        self.comic_interface = ComicPage()
         self.history_interface = HistoryPage()
         self.settings_interface = SettingsPage()
 
@@ -42,6 +44,7 @@ class MainWindow(FluentWindow):
 
     def initNavigation(self):
         self.addSubInterface(self.generator_interface, FluentIcon.BRUSH, tr("nav.generator"))
+        self.addSubInterface(self.comic_interface, FluentIcon.PHOTO, tr("nav.comic"))
         self.addSubInterface(self.history_interface, FluentIcon.HISTORY, tr("nav.history"))
         
         self.navigationInterface.addItem(
@@ -68,6 +71,7 @@ class MainWindow(FluentWindow):
         print("[MainWindow] Application closing, stopping all workers...")
         task_manager.stop_all_workers()
         self.generator_interface.stop_all_workers()
+        self.comic_interface.stop_all_workers()
         super().closeEvent(event)
 
     def regenerate_task(self, task_data):
@@ -75,6 +79,7 @@ class MainWindow(FluentWindow):
         self.switchTo(self.generator_interface)
 
         model_name = task_data.get('model', '')
+        model_name = self.generator_interface.LEGACY_MODEL_ALIASES.get(model_name, model_name)
         target_tab = self.generator_interface.get_tab_for_model(model_name)
         if target_tab:
             self.generator_interface.model_tabs.setCurrentItem(target_tab)
@@ -85,7 +90,7 @@ class MainWindow(FluentWindow):
         if model_name.startswith("nano-banana"):
             self.generator_interface.ratio_combo.setCurrentText(task_data['aspect_ratio'])
             self.generator_interface.size_combo.setCurrentText(task_data['image_size'])
-        elif model_name == "gpt-image-1.5":
+        elif self.generator_interface._is_completion_model(model_name):
             self.generator_interface.gpt_size_combo.setCurrentText(task_data['image_size'])
         
         # Handle reference image if it exists

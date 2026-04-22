@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt, Signal, QUrl, QSize, QTimer
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFrame, QStackedWidget)
-from PySide6.QtGui import QPixmap, QIcon, QDesktopServices
+from PySide6.QtGui import QPixmap, QIcon, QDesktopServices, QImageReader
 from qfluentwidgets import (StrongBodyLabel, BodyLabel, TransparentToolButton, ProgressRing, FluentIcon, isDarkTheme, qconfig, ScrollArea)
 
 from core.config import cfg
@@ -44,7 +44,7 @@ class TaskWidget(QFrame):
         self.status_label = BodyLabel("Attempt: 1")
         layout.addWidget(self.status_label, 1)
         
-        # Add variants info label (for GPT/Sora models)
+        # Add variants info label (for GPT Image models)
         self.variants_label = BodyLabel("")
         self.variants_label.hide()
         layout.addWidget(self.variants_label)
@@ -127,14 +127,20 @@ class TaskWidget(QFrame):
         else:
             self.status_label.setText(f"✓ Success on retry {self.attempt_count}")
         
-        # Load scaled thumbnail to reduce memory usage
+        # Decode directly to icon size, avoid loading full image into memory.
         try:
-            # Load at reduced size directly to save memory
-            pixmap = QPixmap(filepath)
-            if not pixmap.isNull():
-                # Scale down to thumbnail size (40 height) to save memory
-                scaled_pixmap = pixmap.scaledToHeight(40, Qt.SmoothTransformation)
-                icon = QIcon(scaled_pixmap)
+            reader = QImageReader(filepath)
+            reader.setAutoTransform(True)
+
+            source_size = reader.size()
+            if source_size.isValid() and source_size.width() > 0 and source_size.height() > 0:
+                reader.setScaledSize(source_size.scaled(80, 80, Qt.KeepAspectRatio))
+            else:
+                reader.setScaledSize(QSize(80, 80))
+
+            image = reader.read()
+            if not image.isNull():
+                icon = QIcon(QPixmap.fromImage(image))
                 self.result_btn.setIcon(icon)
         except Exception as e:
             print(f"[TaskWidget] Error loading thumbnail: {e}")
@@ -214,6 +220,7 @@ class TaskWidget(QFrame):
                 self.retry_timer.timeout.disconnect()
             except:
                 pass
+            self.result_btn.setIcon(QIcon())
             # Clear only internal parameters
             self.params = {}
         except Exception as e:

@@ -1,9 +1,10 @@
 import os
-from PySide6.QtCore import Qt, QSize, Signal, QUrl
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QFrame, QDialog, QTextBrowser
+from PySide6.QtCore import Qt, QSize, Signal, QUrl, QTimer
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QFrame, QDialog, QTextBrowser, QMessageBox
 from PySide6.QtGui import QPixmap, QDesktopServices, QIcon, QFontMetrics, QImageReader
 from qfluentwidgets import (CardWidget, StrongBodyLabel, BodyLabel, CaptionLabel, 
-                            TransparentPushButton, FluentIcon, ImageLabel, ScrollArea, MessageBoxBase, SubtitleLabel)
+                            TransparentPushButton, FluentIcon, ImageLabel, ScrollArea, MessageBoxBase, SubtitleLabel,
+                            InfoBar, InfoBarPosition)
 
 from core.history_manager import history_mgr
 from core.config import cfg
@@ -99,10 +100,13 @@ class ClickableLabel(QLabel):
 
 class HistoryItem(CardWidget):
     regenerateRequested = Signal(dict)
+    THUMBNAIL_READ_SIZE = QSize(176, 176)
 
     def __init__(self, task_data, parent=None):
         super().__init__(parent)
         self.task_data = task_data
+        self._thumbnail_loaded = False
+        self._thumb_path = None
         self.setFixedHeight(120)
         
         layout = QHBoxLayout(self)
@@ -115,17 +119,11 @@ class HistoryItem(CardWidget):
         self.thumb.setScaledContents(True)
         
         if task_data["status"] == "succeeded" and task_data["result_path"] and os.path.exists(task_data["result_path"]):
-            # Optimized loading using QImageReader
-            reader = QImageReader(task_data["result_path"])
-            # Scale to a reasonable thumbnail size (e.g. 2x for high DPI)
-            reader.setScaledSize(QSize(176, 176))
-            image = reader.read()
-            
-            if not image.isNull():
-                self.thumb.setPixmap(QPixmap.fromImage(image))
-            
+            self._thumb_path = task_data["result_path"]
             self.thumb.setCursor(Qt.PointingHandCursor)
             self.thumb.mousePressEvent = self.on_thumb_click
+            self.thumb.setText("...")
+            self.thumb.setAlignment(Qt.AlignCenter)
         else:
             self.thumb.setText(tr("history.no_image"))
             self.thumb.setAlignment(Qt.AlignCenter)
@@ -206,6 +204,36 @@ class HistoryItem(CardWidget):
         if self.task_data["result_path"]:
             folder = os.path.dirname(self.task_data["result_path"])
             QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
+
+    def has_thumbnail(self):
+        return bool(self._thumb_path)
+
+    def load_thumbnail(self):
+        if self._thumbnail_loaded or not self._thumb_path:
+            return
+
+        reader = QImageReader(self._thumb_path)
+        reader.setAutoTransform(True)
+
+        source_size = reader.size()
+        if source_size.isValid() and source_size.width() > 0 and source_size.height() > 0:
+            reader.setScaledSize(source_size.scaled(self.THUMBNAIL_READ_SIZE, Qt.KeepAspectRatio))
+        else:
+            reader.setScaledSize(self.THUMBNAIL_READ_SIZE)
+
+        image = reader.read()
+        if not image.isNull():
+            self.thumb.setText("")
+            self.thumb.setPixmap(QPixmap.fromImage(image))
+        else:
+            self.thumb.setText(tr("history.no_image"))
+        self._thumbnail_loaded = True
+
+    def cleanup(self):
+        self.thumb.clear()
+        self.thumb.setPixmap(QPixmap())
+        self._thumbnail_loaded = True
+        self._thumb_path = None
             
 class HistoryPage(QWidget):
     def __init__(self):
@@ -213,6 +241,8 @@ class HistoryPage(QWidget):
         self.setObjectName("HistoryPage")
         self.current_page = 1
         self.items_per_page = cfg.get("history_items_per_page", 5)
+        self._thumbnail_queue = []
+        self._load_token = 0
         self.initUI()
 
     def initUI(self):
@@ -223,6 +253,15 @@ class HistoryPage(QWidget):
         top_layout = QHBoxLayout()
         top_layout.setContentsMargins(20, 10, 20, 0)
         top_layout.addStretch()
+        self.clear_running_btn = TransparentPushButton(FluentIcon.DELETE, tr("history.clear_running"))
+        self.clear_running_btn.clicked.connect(self.clear_running_tasks)
+        top_layout.addWidget(self.clear_running_btn)
+        self.clear_failed_btn = TransparentPushButton(FluentIcon.DELETE, tr("history.clear_failed"))
+        self.clear_failed_btn.clicked.connect(self.clear_failed_tasks)
+        top_layout.addWidget(self.clear_failed_btn)
+        self.clear_all_btn = TransparentPushButton(FluentIcon.DELETE, tr("history.clear_all"))
+        self.clear_all_btn.clicked.connect(self.clear_all_tasks)
+        top_layout.addWidget(self.clear_all_btn)
         self.refresh_btn = TransparentPushButton(FluentIcon.SYNC, tr("history.refresh"))
         self.refresh_btn.clicked.connect(self.refresh_data)
         top_layout.addWidget(self.refresh_btn)
@@ -270,6 +309,50 @@ class HistoryPage(QWidget):
         self.current_page = 1
         self.load_history()
 
+    def _confirm_cleanup(self, title_key, content_key):
+        reply = QMessageBox.question(
+            self,
+            tr(title_key),
+            tr(content_key),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
+
+    def _show_cleanup_result(self, deleted_count):
+        InfoBar.success(
+            title=tr("common.success"),
+            content=tr("history.clear_done", count=deleted_count),
+            parent=self,
+            position=InfoBarPosition.TOP_RIGHT,
+        )
+
+    def clear_failed_tasks(self):
+        if not self._confirm_cleanup("history.clear_failed", "history.clear_failed_confirm"):
+            return
+        deleted_count = history_mgr.clear_failed_tasks()
+        self.current_page = 1
+        self.load_history()
+        self._show_cleanup_result(deleted_count)
+
+    def clear_running_tasks(self):
+        if not self._confirm_cleanup("history.clear_running", "history.clear_running_confirm"):
+            return
+        deleted_count = history_mgr.clear_running_tasks()
+        self.current_page = 1
+        self.load_history()
+        self._show_cleanup_result(deleted_count)
+
+    def clear_all_tasks(self):
+        if not self._confirm_cleanup("history.clear_all", "history.clear_all_confirm"):
+            return
+        if not self._confirm_cleanup("history.clear_all", "history.clear_all_second_confirm"):
+            return
+        deleted_count = history_mgr.clear_all_tasks()
+        self.current_page = 1
+        self.load_history()
+        self._show_cleanup_result(deleted_count)
+
     def prev_page(self):
         if self.current_page > 1:
             self.current_page -= 1
@@ -280,18 +363,22 @@ class HistoryPage(QWidget):
         self.load_history()
 
     def load_history(self):
-        # Clear existing - force cleanup to free memory
-        for i in range(self.vbox.count()):
-            item = self.vbox.itemAt(i)
-            if item.widget():
-                widget = item.widget()
-                # Clear pixmap to free memory before deletion
-                if hasattr(widget, 'thumb') and hasattr(widget.thumb, 'clear'):
-                    widget.thumb.clear()
+        self._load_token += 1
+        token = self._load_token
+        self._thumbnail_queue = []
+
+        # Clear existing widgets and release image memory promptly.
+        while self.vbox.count():
+            item = self.vbox.takeAt(0)
+            if item is None:
+                continue
+            widget = item.widget()
+            if widget:
+                if hasattr(widget, "cleanup"):
+                    widget.cleanup()
                 widget.deleteLater()
-                
-        all_tasks = history_mgr.get_all_tasks()
-        total_items = len(all_tasks)
+
+        total_items = history_mgr.get_task_count()
         total_pages = (total_items + self.items_per_page - 1) // self.items_per_page
         if total_pages == 0: total_pages = 1
         
@@ -300,10 +387,7 @@ class HistoryPage(QWidget):
         if self.current_page < 1:
             self.current_page = 1
             
-        start_idx = (self.current_page - 1) * self.items_per_page
-        end_idx = min(start_idx + self.items_per_page, total_items)
-        
-        current_tasks = all_tasks[start_idx:end_idx]
+        current_tasks = history_mgr.get_tasks_page(self.current_page, self.items_per_page)
         
         if not current_tasks:
             self.vbox.addWidget(BodyLabel(tr("history.no_history")))
@@ -312,6 +396,9 @@ class HistoryPage(QWidget):
                 item = HistoryItem(task)
                 item.regenerateRequested.connect(self.on_regenerate_requested)
                 self.vbox.addWidget(item)
+                if item.has_thumbnail():
+                    self._thumbnail_queue.append(item)
+            QTimer.singleShot(0, lambda: self._load_next_thumbnail(token))
         
         # Update Pagination Controls
         self.page_label.setText(f"{self.current_page} / {total_pages}")
@@ -322,3 +409,16 @@ class HistoryPage(QWidget):
         # Signal up to main window
         if self.window():
             self.window().regenerate_task(task_data)
+
+    def _load_next_thumbnail(self, token):
+        if token != self._load_token:
+            return
+        if not self._thumbnail_queue:
+            return
+
+        item = self._thumbnail_queue.pop(0)
+        if item and item.parent() is not None:
+            item.load_thumbnail()
+
+        if self._thumbnail_queue and token == self._load_token:
+            QTimer.singleShot(18, lambda: self._load_next_thumbnail(token))

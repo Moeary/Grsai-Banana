@@ -17,7 +17,7 @@ class TaskWorker(QThread):
     progress_signal = Signal(int, str)
     finished_signal = Signal(bool, str, str)  # success, result_path/msg, failure_reason
     
-    def __init__(self, prompt, model, ratio, size, ref_urls, task_id=None, variants=1):
+    def __init__(self, prompt, model, ratio, size, ref_urls, task_id=None, variants=1, output_dir=None, filename_prefix=None):
         super().__init__()
         self.prompt = prompt
         self.model = model
@@ -26,6 +26,8 @@ class TaskWorker(QThread):
         self.ref_urls = ref_urls
         self.task_id = task_id
         self.variants = variants
+        self.output_dir = output_dir
+        self.filename_prefix = filename_prefix
         self.is_running = True
         self.setTerminationEnabled(True)
 
@@ -114,25 +116,28 @@ class TaskWorker(QThread):
                                     if ".jpg" in img_url: ext = "jpg"
                                     if ".jpeg" in img_url: ext = "jpeg"
                                     
-                                    output_dir = cfg.get("output_folder")
+                                    output_dir = self.output_dir or cfg.get("output_folder")
                                     if not os.path.exists(output_dir):
                                         os.makedirs(output_dir)
+
+                                    prefix = (self.filename_prefix or "").strip()
+                                    base_stem = f"{prefix}_{timestamp}" if prefix else timestamp
                                     
                                     # Generate filename with conflict resolution
                                     if len(results) > 1:
                                         # Multiple images from variants - use variant index
-                                        filename = f"{timestamp}_{idx}.{ext}" if idx > 0 else f"{timestamp}.{ext}"
+                                        filename = f"{base_stem}_{idx + 1}.{ext}"
                                     else:
                                         # Single image - check for conflicts with other concurrent tasks
-                                        base_filename = f"{timestamp}.{ext}"
+                                        base_filename = f"{base_stem}.{ext}"
                                         filepath = os.path.join(output_dir, base_filename)
                                         
                                         # Check for file conflicts and add suffix if needed
                                         if os.path.exists(filepath):
                                             counter = 1
-                                            while os.path.exists(os.path.join(output_dir, f"{timestamp}_{counter}.{ext}")):
+                                            while os.path.exists(os.path.join(output_dir, f"{base_stem}_{counter}.{ext}")):
                                                 counter += 1
-                                            filename = f"{timestamp}_{counter}.{ext}"
+                                            filename = f"{base_stem}_{counter}.{ext}"
                                         else:
                                             filename = base_filename
                                     
@@ -194,9 +199,18 @@ class TaskManager:
     def __init__(self):
         self.active_workers = {}  # task_widget -> worker
     
-    def create_worker(self, prompt, model, ratio, size, ref_urls, variants=1):
+    def create_worker(self, prompt, model, ratio, size, ref_urls, variants=1, output_dir=None, filename_prefix=None):
         """Create and return a new TaskWorker"""
-        worker = TaskWorker(prompt, model, ratio, size, ref_urls, variants=variants)
+        worker = TaskWorker(
+            prompt,
+            model,
+            ratio,
+            size,
+            ref_urls,
+            variants=variants,
+            output_dir=output_dir,
+            filename_prefix=filename_prefix,
+        )
         return worker
     
     def stop_worker(self, task_widget):
