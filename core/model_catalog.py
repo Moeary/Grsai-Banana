@@ -23,11 +23,15 @@ BANANA_PRO_MODELS = [
 ]
 
 GPT_IMAGE_MODELS = [
-    "gpt-image-1.5",
-    "sora-image"
+    "gpt-image-2",
 ]
 
-COMIC_IMAGE_MODELS = BANANA_1_MODELS + BANANA_PRO_MODELS
+LEGACY_IMAGE_MODEL_ALIASES = {
+    "gpt-image-1.5": "gpt-image-2",
+    "sora-image": "gpt-image-2",
+}
+
+COMIC_IMAGE_MODELS = BANANA_1_MODELS + BANANA_PRO_MODELS + GPT_IMAGE_MODELS
 
 TAB_MODELS = {
     TAB_BANANA_1: BANANA_1_MODELS,

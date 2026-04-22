@@ -273,7 +273,7 @@ class SettingsPage(ScrollArea):
                 if model.startswith("nano-banana"):
                     cfg.set("nano_banana_aspect_ratio", gen_page.ratio_combo.currentText())
                     cfg.set("nano_banana_image_size", gen_page.size_combo.currentText())
-                elif model == "gpt-image-1.5":
+                elif gen_page._is_completion_model(model):
                     cfg.set("gpt_image_size", gen_page.gpt_size_combo.currentText())
                 
                 # Save shared parameters

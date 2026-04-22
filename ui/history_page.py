@@ -1,9 +1,10 @@
 import os
 from PySide6.QtCore import Qt, QSize, Signal, QUrl, QTimer
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QFrame, QDialog, QTextBrowser
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QFrame, QDialog, QTextBrowser, QMessageBox
 from PySide6.QtGui import QPixmap, QDesktopServices, QIcon, QFontMetrics, QImageReader
 from qfluentwidgets import (CardWidget, StrongBodyLabel, BodyLabel, CaptionLabel, 
-                            TransparentPushButton, FluentIcon, ImageLabel, ScrollArea, MessageBoxBase, SubtitleLabel)
+                            TransparentPushButton, FluentIcon, ImageLabel, ScrollArea, MessageBoxBase, SubtitleLabel,
+                            InfoBar, InfoBarPosition)
 
 from core.history_manager import history_mgr
 from core.config import cfg
@@ -252,6 +253,15 @@ class HistoryPage(QWidget):
         top_layout = QHBoxLayout()
         top_layout.setContentsMargins(20, 10, 20, 0)
         top_layout.addStretch()
+        self.clear_running_btn = TransparentPushButton(FluentIcon.DELETE, tr("history.clear_running"))
+        self.clear_running_btn.clicked.connect(self.clear_running_tasks)
+        top_layout.addWidget(self.clear_running_btn)
+        self.clear_failed_btn = TransparentPushButton(FluentIcon.DELETE, tr("history.clear_failed"))
+        self.clear_failed_btn.clicked.connect(self.clear_failed_tasks)
+        top_layout.addWidget(self.clear_failed_btn)
+        self.clear_all_btn = TransparentPushButton(FluentIcon.DELETE, tr("history.clear_all"))
+        self.clear_all_btn.clicked.connect(self.clear_all_tasks)
+        top_layout.addWidget(self.clear_all_btn)
         self.refresh_btn = TransparentPushButton(FluentIcon.SYNC, tr("history.refresh"))
         self.refresh_btn.clicked.connect(self.refresh_data)
         top_layout.addWidget(self.refresh_btn)
@@ -298,6 +308,50 @@ class HistoryPage(QWidget):
     def refresh_data(self):
         self.current_page = 1
         self.load_history()
+
+    def _confirm_cleanup(self, title_key, content_key):
+        reply = QMessageBox.question(
+            self,
+            tr(title_key),
+            tr(content_key),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
+
+    def _show_cleanup_result(self, deleted_count):
+        InfoBar.success(
+            title=tr("common.success"),
+            content=tr("history.clear_done", count=deleted_count),
+            parent=self,
+            position=InfoBarPosition.TOP_RIGHT,
+        )
+
+    def clear_failed_tasks(self):
+        if not self._confirm_cleanup("history.clear_failed", "history.clear_failed_confirm"):
+            return
+        deleted_count = history_mgr.clear_failed_tasks()
+        self.current_page = 1
+        self.load_history()
+        self._show_cleanup_result(deleted_count)
+
+    def clear_running_tasks(self):
+        if not self._confirm_cleanup("history.clear_running", "history.clear_running_confirm"):
+            return
+        deleted_count = history_mgr.clear_running_tasks()
+        self.current_page = 1
+        self.load_history()
+        self._show_cleanup_result(deleted_count)
+
+    def clear_all_tasks(self):
+        if not self._confirm_cleanup("history.clear_all", "history.clear_all_confirm"):
+            return
+        if not self._confirm_cleanup("history.clear_all", "history.clear_all_second_confirm"):
+            return
+        deleted_count = history_mgr.clear_all_tasks()
+        self.current_page = 1
+        self.load_history()
+        self._show_cleanup_result(deleted_count)
 
     def prev_page(self):
         if self.current_page > 1:

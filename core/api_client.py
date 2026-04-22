@@ -3,11 +3,17 @@ import json
 import os
 import base64
 from core.config import cfg
-from core.model_catalog import NANO_MODELS, NANO_IMAGE_SIZE_OPTIONS, COMPLETION_MODELS
+from core.model_catalog import (
+    NANO_MODELS,
+    NANO_IMAGE_SIZE_OPTIONS,
+    COMPLETION_MODELS,
+    LEGACY_IMAGE_MODEL_ALIASES,
+)
 
 class ApiClient:
     LEGACY_MODEL_ALIASES = {
-        "gemini-2.5-flash-image": "nano-banana-fast"
+        "gemini-2.5-flash-image": "nano-banana-fast",
+        **LEGACY_IMAGE_MODEL_ALIASES,
     }
     LEGACY_COMPLETION_MODELS = {"sora-2", "veo3.1-fast-1080p"}
     def __init__(self):
@@ -39,13 +45,48 @@ class ApiClient:
             print(f"Error converting image to data URI: {e}")
         return None
 
+    def _normalize_chat_messages(self, messages):
+        normalized = []
+        for message in messages or []:
+            if not isinstance(message, dict):
+                normalized.append(message)
+                continue
+
+            normalized_message = dict(message)
+            content = normalized_message.get("content")
+            if isinstance(content, list):
+                normalized_content = []
+                for item in content:
+                    if not isinstance(item, dict):
+                        normalized_content.append(item)
+                        continue
+
+                    normalized_item = dict(item)
+                    if item.get("type") == "image_url":
+                        image_url = item.get("image_url")
+                        if isinstance(image_url, dict):
+                            url = image_url.get("url")
+                            if isinstance(url, str) and os.path.isfile(url):
+                                data_uri = self._convert_image_to_data_uri(url)
+                                if data_uri:
+                                    normalized_item["image_url"] = dict(image_url)
+                                    normalized_item["image_url"]["url"] = data_uri
+                        elif isinstance(image_url, str) and os.path.isfile(image_url):
+                            data_uri = self._convert_image_to_data_uri(image_url)
+                            if data_uri:
+                                normalized_item["image_url"] = {"url": data_uri}
+                    normalized_content.append(normalized_item)
+                normalized_message["content"] = normalized_content
+            normalized.append(normalized_message)
+        return normalized
+
     def chat_completion(self, model, messages, stream=False, temperature=None):
         """Call OpenAI-compatible chat completions API."""
         url = f"{self._get_base_url().rstrip('/')}/v1/chat/completions"
         payload = {
             "model": model,
             "stream": stream,
-            "messages": messages,
+            "messages": self._normalize_chat_messages(messages),
         }
 
         if temperature is not None:
@@ -110,7 +151,7 @@ class ApiClient:
             return {"code": -1, "msg": str(e)}
 
     def _submit_gpt_image(self, prompt, model, size, ref_image_urls, variants):
-        """Submit to GPT Image / Sora API"""
+        """Submit to GPT Image API"""
         url = f"{self._get_base_url().rstrip('/')}/v1/draw/completions"
         
         payload = {

@@ -196,6 +196,34 @@ class HistoryManager:
                 row = conn.execute("SELECT COUNT(1) AS cnt FROM history_tasks").fetchone()
                 return int(row["cnt"] if row else 0)
 
+    def clear_all_tasks(self):
+        with self._lock:
+            with self._connect() as conn:
+                row = conn.execute("SELECT COUNT(1) AS cnt FROM history_tasks").fetchone()
+                deleted_count = int(row["cnt"] if row else 0)
+                conn.execute("DELETE FROM history_tasks")
+                conn.commit()
+                conn.execute("VACUUM")
+        return deleted_count
+
+    def clear_failed_tasks(self):
+        with self._lock:
+            with self._connect() as conn:
+                cursor = conn.execute("DELETE FROM history_tasks WHERE status = ?", ("failed",))
+                deleted_count = cursor.rowcount if cursor.rowcount is not None else 0
+                conn.commit()
+                conn.execute("VACUUM")
+        return max(int(deleted_count), 0)
+
+    def clear_running_tasks(self):
+        with self._lock:
+            with self._connect() as conn:
+                cursor = conn.execute("DELETE FROM history_tasks WHERE status = ?", ("running",))
+                deleted_count = cursor.rowcount if cursor.rowcount is not None else 0
+                conn.commit()
+                conn.execute("VACUUM")
+        return max(int(deleted_count), 0)
+
     def get_tasks_page(self, page, page_size):
         safe_page = max(int(page), 1)
         safe_page_size = max(int(page_size), 1)

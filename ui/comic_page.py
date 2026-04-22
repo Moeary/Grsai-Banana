@@ -1,7 +1,16 @@
 import os
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QHBoxLayout,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 from qfluentwidgets import (
     BodyLabel,
     CaptionLabel,
@@ -12,7 +21,6 @@ from qfluentwidgets import (
     InfoBar,
     InfoBarPosition,
     PrimaryPushButton,
-    ScrollArea,
     SegmentedWidget,
     StrongBodyLabel,
     TextEdit,
@@ -25,10 +33,87 @@ from core.comic_planner import ComicPlanWorker
 from core.comic_project_manager import project_manager
 from core.config import cfg
 from core.i18n import tr
-from core.model_catalog import CHAT_MODELS, COMIC_IMAGE_MODELS, NANO_IMAGE_SIZE_OPTIONS
+from core.model_catalog import (
+    CHAT_MODELS,
+    COMIC_IMAGE_MODELS,
+    COMPLETION_MODELS,
+    LEGACY_IMAGE_MODEL_ALIASES,
+    NANO_IMAGE_SIZE_OPTIONS,
+)
 from core.task_manager import task_manager
 from ui.components.image_drop_area import ImageDropArea
 from ui.components.task_widget import TaskListWidget, TaskWidget
+
+
+GPT_IMAGE_SIZE_OPTIONS = ["auto", "1:1", "3:2", "2:3"]
+
+
+def _parse_reference_targets(text):
+    values = []
+    for raw in (text or "").replace("，", ",").split(","):
+        cleaned = raw.strip()
+        if not cleaned:
+            continue
+        try:
+            value = int(cleaned)
+        except ValueError:
+            continue
+        if value > 0 and value not in values:
+            values.append(value)
+    return values
+
+
+def _format_reference_targets(values):
+    return ",".join(str(value) for value in values or [])
+
+
+def _reference_label(value):
+    labels = {
+        1: "一",
+        2: "二",
+        3: "三",
+        4: "四",
+        5: "五",
+        6: "六",
+        7: "七",
+        8: "八",
+        9: "九",
+        10: "十",
+        11: "十一",
+        12: "十二",
+        13: "十三",
+        14: "十四",
+    }
+    return labels.get(value, str(value))
+
+
+class ComicPageListWidget(QListWidget):
+    orderChanged = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setDragDropMode(QAbstractItemView.InternalMove)
+        self.setDefaultDropAction(Qt.MoveAction)
+        self.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.setSpacing(10)
+        self.setStyleSheet(
+            """
+            QListWidget {
+                border: none;
+                background: transparent;
+                outline: none;
+            }
+            QListWidget::item {
+                background: transparent;
+                border: none;
+            }
+            """
+        )
+
+    def dropEvent(self, event):
+        super().dropEvent(event)
+        self.orderChanged.emit()
 
 
 class ComicPageCard(CardWidget):
@@ -46,7 +131,8 @@ class ComicPageCard(CardWidget):
         layout.setSpacing(10)
 
         header = QHBoxLayout()
-        header.addWidget(StrongBodyLabel(tr("comic.page_label", page=self.page_number)))
+        self.page_label = StrongBodyLabel(tr("comic.page_label", page=self.page_number))
+        header.addWidget(self.page_label)
         header.addStretch()
         generate_btn = PrimaryPushButton(tr("comic.generate_page"))
         generate_btn.clicked.connect(self._emit_generate)
@@ -62,6 +148,10 @@ class ComicPageCard(CardWidget):
 
         self.dialogue_edit = self._make_text_edit("\n".join(page_data.get("dialogue", [])), 96)
         layout.addWidget(self._field_block(tr("comic.page_dialogue"), self.dialogue_edit))
+
+        self.refs_edit = QLineEdit(_format_reference_targets(page_data.get("reference_targets", [])))
+        self.refs_edit.setPlaceholderText(tr("comic.page_refs_placeholder"))
+        layout.addWidget(self._field_block(tr("comic.page_refs"), self.refs_edit))
 
         self.prompt_edit = self._make_text_edit(page_data.get("image_prompt", ""), 150)
         layout.addWidget(self._field_block(tr("comic.page_prompt"), self.prompt_edit))
@@ -84,6 +174,10 @@ class ComicPageCard(CardWidget):
     def _emit_generate(self):
         self.generateRequested.emit(self.get_page_data())
 
+    def set_page_number(self, page_number):
+        self.page_number = int(page_number)
+        self.page_label.setText(tr("comic.page_label", page=self.page_number))
+
     def get_page_data(self):
         dialogue_lines = []
         for line in self.dialogue_edit.toPlainText().splitlines():
@@ -96,6 +190,7 @@ class ComicPageCard(CardWidget):
             "title": self.title_edit.text().strip(),
             "story_beat": self.story_edit.toPlainText().strip(),
             "dialogue": dialogue_lines,
+            "reference_targets": _parse_reference_targets(self.refs_edit.text()),
             "image_prompt": self.prompt_edit.toPlainText().strip(),
         })
         return page_data
@@ -174,7 +269,8 @@ class ComicPage(QWidget):
         image_model_box.addWidget(CaptionLabel(tr("comic.image_model")))
         self.image_model_combo = ComboBox()
         self.image_model_combo.addItems(COMIC_IMAGE_MODELS)
-        preferred_image_model = cfg.get("comic_image_model", COMIC_IMAGE_MODELS[0])
+        raw_preferred_image_model = cfg.get("comic_image_model", COMIC_IMAGE_MODELS[0])
+        preferred_image_model = LEGACY_IMAGE_MODEL_ALIASES.get(raw_preferred_image_model, raw_preferred_image_model)
         if preferred_image_model in COMIC_IMAGE_MODELS:
             self.image_model_combo.setCurrentText(preferred_image_model)
         self.image_model_combo.currentTextChanged.connect(self.on_image_model_changed)
@@ -192,7 +288,8 @@ class ComicPage(QWidget):
         row_2.addLayout(pages_box)
 
         ratio_box = QVBoxLayout()
-        ratio_box.addWidget(CaptionLabel(tr("comic.aspect_ratio")))
+        self.ratio_label = CaptionLabel(tr("comic.aspect_ratio"))
+        ratio_box.addWidget(self.ratio_label)
         self.ratio_combo = ComboBox()
         self.ratio_combo.addItems(["auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "5:4", "4:5", "21:9"])
         self.ratio_combo.setCurrentText(cfg.get("comic_aspect_ratio", "3:4"))
@@ -273,16 +370,13 @@ class ComicPage(QWidget):
         pages_header.addWidget(self.plan_status_label)
         center_layout.addLayout(pages_header)
 
-        self.pages_scroll = ScrollArea()
-        self.pages_scroll.setWidgetResizable(True)
-        self.pages_scroll.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
-        self.pages_container = QWidget()
-        self.pages_layout = QVBoxLayout(self.pages_container)
-        self.pages_layout.setContentsMargins(0, 0, 0, 0)
-        self.pages_layout.setSpacing(10)
-        self.pages_layout.setAlignment(Qt.AlignTop)
-        self.pages_scroll.setWidget(self.pages_container)
-        center_layout.addWidget(self.pages_scroll, 1)
+        self.pages_empty_label = BodyLabel(tr("comic.no_pages"))
+        self.pages_empty_label.setAlignment(Qt.AlignCenter)
+        center_layout.addWidget(self.pages_empty_label, 1)
+
+        self.pages_list = ComicPageListWidget()
+        self.pages_list.orderChanged.connect(self.on_pages_reordered)
+        center_layout.addWidget(self.pages_list, 1)
 
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
@@ -337,7 +431,41 @@ class ComicPage(QWidget):
         return self.project_name_edit.text().strip()
 
     def _collect_pages_data(self):
+        self._sync_page_cards_from_list()
         return [card.get_page_data() for card in self.page_cards]
+
+    def _is_completion_model(self, model_name):
+        normalized_model = LEGACY_IMAGE_MODEL_ALIASES.get(model_name, model_name)
+        return normalized_model in COMPLETION_MODELS or normalized_model.startswith("gpt-image")
+
+    def _set_combo_items(self, combo, items, preferred=None):
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItems(items)
+        if preferred in items:
+            combo.setCurrentText(preferred)
+        elif items:
+            combo.setCurrentText(items[0])
+        combo.blockSignals(False)
+
+    def _sync_page_cards_from_list(self):
+        cards = []
+        for row in range(self.pages_list.count()):
+            item = self.pages_list.item(row)
+            card = self.pages_list.itemWidget(item)
+            if isinstance(card, ComicPageCard):
+                cards.append(card)
+        if cards:
+            self.page_cards = cards
+        return self.page_cards
+
+    def _refresh_page_numbers(self):
+        self._sync_page_cards_from_list()
+        for index, card in enumerate(self.page_cards, start=1):
+            card.set_page_number(index)
+            item = self.pages_list.item(index - 1)
+            if item is not None:
+                item.setSizeHint(card.sizeHint())
 
     def _ensure_project_name(self):
         if self._current_project_name():
@@ -361,20 +489,24 @@ class ComicPage(QWidget):
         }
 
     def on_image_model_changed(self, model_name):
+        if not model_name:
+            return
+        model_name = LEGACY_IMAGE_MODEL_ALIASES.get(model_name, model_name)
         cfg.set("comic_image_model", model_name)
-        size_options = NANO_IMAGE_SIZE_OPTIONS.get(model_name)
+        is_completion = self._is_completion_model(model_name)
+
+        self.ratio_label.setVisible(not is_completion)
+        self.ratio_combo.setVisible(not is_completion)
+
+        size_options = GPT_IMAGE_SIZE_OPTIONS if is_completion else NANO_IMAGE_SIZE_OPTIONS.get(model_name)
         has_size_options = bool(size_options)
         self.size_label.setVisible(has_size_options)
         self.size_combo.setVisible(has_size_options)
         if has_size_options:
-            selected_size = cfg.get("comic_image_size", "1K")
+            selected_size = cfg.get("gpt_image_size", "auto") if is_completion else cfg.get("comic_image_size", "1K")
             if selected_size not in size_options:
                 selected_size = size_options[0]
-            self.size_combo.blockSignals(True)
-            self.size_combo.clear()
-            self.size_combo.addItems(size_options)
-            self.size_combo.setCurrentText(selected_size)
-            self.size_combo.blockSignals(False)
+            self._set_combo_items(self.size_combo, size_options, selected_size)
 
     def _story_requirement(self):
         return self.story_editor["editor"].toPlainText().strip()
@@ -383,13 +515,17 @@ class ComicPage(QWidget):
         return self.style_editor["editor"].toPlainText().strip()
 
     def _save_current_settings(self):
+        image_model = LEGACY_IMAGE_MODEL_ALIASES.get(self.image_model_combo.currentText(), self.image_model_combo.currentText())
         cfg.set("comic_story_model", self.story_model_combo.currentText())
-        cfg.set("comic_image_model", self.image_model_combo.currentText())
+        cfg.set("comic_image_model", image_model)
         cfg.set("comic_page_count", int(self.page_count_combo.currentText()))
         cfg.set("comic_aspect_ratio", self.ratio_combo.currentText())
         cfg.set("comic_last_project", self._current_project_name())
         if self.size_combo.isVisible():
-            cfg.set("comic_image_size", self.size_combo.currentText())
+            if self._is_completion_model(image_model):
+                cfg.set("gpt_image_size", self.size_combo.currentText())
+            else:
+                cfg.set("comic_image_size", self.size_combo.currentText())
 
     def save_project_state(self, show_feedback=False):
         project_name = self._current_project_name()
@@ -451,13 +587,18 @@ class ComicPage(QWidget):
         self.story_editor["editor"].setPlainText(payload.get("story_requirement", ""))
         self.style_editor["editor"].setPlainText(payload.get("style_notes", ""))
         self.story_model_combo.setCurrentText(settings.get("story_model", cfg.get("comic_story_model", CHAT_MODELS[0])))
-        self.image_model_combo.setCurrentText(settings.get("image_model", cfg.get("comic_image_model", COMIC_IMAGE_MODELS[0])))
+        raw_image_model = settings.get("image_model", cfg.get("comic_image_model", COMIC_IMAGE_MODELS[0]))
+        image_model = LEGACY_IMAGE_MODEL_ALIASES.get(raw_image_model, raw_image_model)
+        if image_model in COMIC_IMAGE_MODELS:
+            self.image_model_combo.setCurrentText(image_model)
         self.page_count_combo.setCurrentText(str(settings.get("page_count", cfg.get("comic_page_count", 6))))
         self.ratio_combo.setCurrentText(settings.get("aspect_ratio", cfg.get("comic_aspect_ratio", "3:4")))
         self.auto_retry_cb.setChecked(bool(settings.get("auto_retry", cfg.get("auto_retry_on_failure", False))))
         self.on_image_model_changed(self.image_model_combo.currentText())
         if self.size_combo.isVisible():
-            self.size_combo.setCurrentText(settings.get("image_size", cfg.get("comic_image_size", "1K")))
+            saved_size = settings.get("image_size")
+            if saved_size and self.size_combo.findText(saved_size) >= 0:
+                self.size_combo.setCurrentText(saved_size)
 
         self.drop_area.clear_images()
         for ref_path in payload.get("resolved_reference_images", []):
@@ -502,7 +643,7 @@ class ComicPage(QWidget):
             story_requirement,
             self._style_notes(),
             int(self.page_count_combo.currentText()),
-            bool(self.drop_area.image_paths),
+            list(self.drop_area.image_paths),
         )
         self.plan_worker.finished_signal.connect(self.on_plan_finished)
         self.plan_worker.finished.connect(self.on_plan_worker_finished)
@@ -537,16 +678,13 @@ class ComicPage(QWidget):
 
     def _clear_page_cards(self):
         self.page_cards = []
-        while self.pages_layout.count():
-            item = self.pages_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        self.pages_list.clear()
 
     def _show_empty_pages_message(self):
         self._clear_page_cards()
-        empty_label = BodyLabel(tr("comic.no_pages"))
-        empty_label.setAlignment(Qt.AlignCenter)
-        self.pages_layout.addWidget(empty_label)
+        self.pages_empty_label.setText(tr("comic.no_pages"))
+        self.pages_empty_label.show()
+        self.pages_list.hide()
 
     def _populate_pages(self, pages):
         self._clear_page_cards()
@@ -557,8 +695,20 @@ class ComicPage(QWidget):
         for page in pages:
             card = ComicPageCard(page)
             card.generateRequested.connect(self.generate_single_page)
-            self.pages_layout.addWidget(card)
+            item = QListWidgetItem()
+            item.setSizeHint(card.sizeHint())
+            self.pages_list.addItem(item)
+            self.pages_list.setItemWidget(item, card)
             self.page_cards.append(card)
+
+        self._refresh_page_numbers()
+        self.pages_empty_label.hide()
+        self.pages_list.show()
+
+    def on_pages_reordered(self):
+        self._refresh_page_numbers()
+        if self.page_cards:
+            self.save_project_state(show_feedback=False)
 
     def on_generate_all(self):
         if not self._ensure_project_name():
@@ -589,12 +739,13 @@ class ComicPage(QWidget):
         return ""
 
     def _build_image_params(self, page_data):
-        model = self.image_model_combo.currentText()
+        model = LEGACY_IMAGE_MODEL_ALIASES.get(self.image_model_combo.currentText(), self.image_model_combo.currentText())
         size = self.size_combo.currentText() if self.size_combo.isVisible() else "1K"
+        ratio = "auto" if self._is_completion_model(model) else self.ratio_combo.currentText()
         page_number = int(page_data.get("page_number", 1))
         return {
             "model": model,
-            "ratio": self.ratio_combo.currentText(),
+            "ratio": ratio,
             "size": size,
             "ref_urls": [path for path in self.drop_area.image_paths if os.path.isfile(path)],
             "variants": 1,
@@ -608,14 +759,19 @@ class ComicPage(QWidget):
         if self.current_plan_title:
             parts.append(f"项目名：{self.current_plan_title}。")
         parts.append(f"这是漫画的第 {page_data.get('page_number', 1)} 页。")
+        reference_targets = page_data.get("reference_targets") or []
+        if self.drop_area.image_paths:
+            parts.append("你会同时收到多张按上传顺序排列的人物参考图：第 1 张就是参考图一，第 2 张就是参考图二，后续依次类推。")
+            if reference_targets:
+                refs_text = "、".join(f"参考图{_reference_label(index)}" for index in reference_targets)
+                parts.append(f"本页主要角色请优先严格参考：{refs_text}。未列出的参考图不要误用到当前主角身上。")
+            parts.append("请先逐张识别参考图，再决定当前页面该使用哪位角色的外观，不要混淆不同参考图中的发色、眼镜、服装和配饰。")
         if page_data.get("story_beat"):
             parts.append(f"本页剧情：{page_data['story_beat']}。")
         if page_data.get("dialogue"):
             parts.append("本页对白要点：" + " ".join(page_data["dialogue"]))
         if self.current_plan_style_notes:
             parts.append(f"全局画风与氛围：{self.current_plan_style_notes}。")
-        if self.drop_area.image_paths:
-            parts.append("请参考上传的人物参考图，保持人物身份、脸型、发型、服装和气质一致。")
         parts.append(page_data.get("image_prompt", ""))
         parts.append("请输出完整漫画页画面，保证阅读顺序清楚、叙事明确、人物表演到位、画面张力强。")
         return " ".join(part for part in parts if part and str(part).strip())

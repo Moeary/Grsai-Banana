@@ -14,6 +14,7 @@ from core.model_catalog import (
     TAB_MODELS,
     NANO_IMAGE_SIZE_OPTIONS,
     VIP_MODELS,
+    LEGACY_IMAGE_MODEL_ALIASES,
 )
 from core.task_manager import task_manager
 from ui.components.prompt_widget import PromptWidget
@@ -24,6 +25,7 @@ class GeneratorPage(QWidget):
     TAB_MODELS = TAB_MODELS
     NANO_IMAGE_SIZE_OPTIONS = NANO_IMAGE_SIZE_OPTIONS
     VIP_MODELS = set(VIP_MODELS)
+    LEGACY_MODEL_ALIASES = LEGACY_IMAGE_MODEL_ALIASES
 
     def __init__(self):
         super().__init__()
@@ -250,9 +252,11 @@ class GeneratorPage(QWidget):
         return model_name.startswith("nano-banana")
 
     def _is_completion_model(self, model_name):
-        return model_name.startswith("gpt-image") or model_name.startswith("sora")
+        normalized_model = self.LEGACY_MODEL_ALIASES.get(model_name, model_name)
+        return normalized_model.startswith("gpt-image")
 
     def get_tab_for_model(self, model_name):
+        model_name = self.LEGACY_MODEL_ALIASES.get(model_name, model_name)
         for tab_name, models in self.TAB_MODELS.items():
             if model_name in models:
                 return tab_name
@@ -318,6 +322,7 @@ class GeneratorPage(QWidget):
             
         # Restore last selected model for this tab if possible, or default
         last_model = cfg.get(f"last_model_tab_{tab_name}", self.model_combo.itemText(0))
+        last_model = self.LEGACY_MODEL_ALIASES.get(last_model, last_model)
         if self.model_combo.findText(last_model) >= 0:
             self.model_combo.setCurrentText(last_model)
         
@@ -326,6 +331,7 @@ class GeneratorPage(QWidget):
 
     def on_model_changed(self, model_name):
         if not model_name: return
+        model_name = self.LEGACY_MODEL_ALIASES.get(model_name, model_name)
         
         tab_name = getattr(self, "current_tab_key", TAB_BANANA_1)
         cfg.set(f"last_model_tab_{tab_name}", model_name)
@@ -349,9 +355,8 @@ class GeneratorPage(QWidget):
         self.variants_label.setVisible(is_completion)
         self.variants_combo.setVisible(is_completion)
 
-        is_gpt_1_5 = model_name == "gpt-image-1.5"
-        self.gpt_size_label.setVisible(is_gpt_1_5)
-        self.gpt_size_combo.setVisible(is_gpt_1_5)
+        self.gpt_size_label.setVisible(is_completion)
+        self.gpt_size_combo.setVisible(is_completion)
 
         self._update_auto_retry_hint(model_name)
 
@@ -380,13 +385,12 @@ class GeneratorPage(QWidget):
                 cfg.set("nano_banana_image_size", size)
         elif self._is_completion_model(model):
             variants = int(self.variants_combo.currentText())
-            if model == "gpt-image-1.5":
-                size = self.gpt_size_combo.currentText()
-                cfg.set("gpt_image_size", size)
+            size = self.gpt_size_combo.currentText()
+            cfg.set("gpt_image_size", size)
 
         parallel_count = self.parallel_slider.value()
         
-        # For GPT/Sora models with variants, warn about parallel execution
+        # For GPT Image variants, warn about parallel execution
         if self._is_completion_model(model) and variants > 1 and parallel_count > 1:
             InfoBar.warning(
                 title=tr("common.note"), 
@@ -420,7 +424,7 @@ class GeneratorPage(QWidget):
         task_widget = TaskWidget(self.task_counter, prompt, params)
         task_widget.auto_retry = self.auto_retry_cb.isChecked()
         
-        # Show variants info for GPT/Sora models
+        # Show variants info for GPT Image models
         variants = params.get("variants", 1)
         if variants > 1:
             task_widget.set_variants_info(variants)

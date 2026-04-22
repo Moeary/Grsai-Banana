@@ -79,6 +79,7 @@ class MainWindow(FluentWindow):
         self.switchTo(self.generator_interface)
 
         model_name = task_data.get('model', '')
+        model_name = self.generator_interface.LEGACY_MODEL_ALIASES.get(model_name, model_name)
         target_tab = self.generator_interface.get_tab_for_model(model_name)
         if target_tab:
             self.generator_interface.model_tabs.setCurrentItem(target_tab)
@@ -89,7 +90,7 @@ class MainWindow(FluentWindow):
         if model_name.startswith("nano-banana"):
             self.generator_interface.ratio_combo.setCurrentText(task_data['aspect_ratio'])
             self.generator_interface.size_combo.setCurrentText(task_data['image_size'])
-        elif model_name == "gpt-image-1.5":
+        elif self.generator_interface._is_completion_model(model_name):
             self.generator_interface.gpt_size_combo.setCurrentText(task_data['image_size'])
         
         # Handle reference image if it exists

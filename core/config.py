@@ -1,6 +1,8 @@
 import json
 import os
 
+from core.model_catalog import LEGACY_IMAGE_MODEL_ALIASES
+
 CONFIG_FILE = 'config.json'
 
 DEFAULT_CONFIG = {
@@ -11,7 +13,7 @@ DEFAULT_CONFIG = {
     # Nano Banana parameters
     "nano_banana_aspect_ratio": "auto",
     "nano_banana_image_size": "1K",
-    # GPT Image / Sora parameters
+    # GPT Image parameters
     "gpt_image_size": "auto",
     # Shared parameters
     "auto_retry_on_failure": False,
@@ -69,11 +71,16 @@ class Config:
             migrated["api_base_url"] = DEFAULT_CONFIG["api_base_url"]
 
         legacy_model_map = {
-            "gemini-2.5-flash-image": "nano-banana-fast"
+            "gemini-2.5-flash-image": "nano-banana-fast",
+            **LEGACY_IMAGE_MODEL_ALIASES,
         }
         last_model = migrated.get("last_model")
         if last_model in legacy_model_map:
             migrated["last_model"] = legacy_model_map[last_model]
+
+        comic_image_model = migrated.get("comic_image_model")
+        if comic_image_model in legacy_model_map:
+            migrated["comic_image_model"] = legacy_model_map[comic_image_model]
 
         for key, value in list(migrated.items()):
             if key.startswith("last_model_") and value in legacy_model_map:

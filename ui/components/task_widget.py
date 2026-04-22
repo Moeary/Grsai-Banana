@@ -44,7 +44,7 @@ class TaskWidget(QFrame):
         self.status_label = BodyLabel("Attempt: 1")
         layout.addWidget(self.status_label, 1)
         
-        # Add variants info label (for GPT/Sora models)
+        # Add variants info label (for GPT Image models)
         self.variants_label = BodyLabel("")
         self.variants_label.hide()
         layout.addWidget(self.variants_label)
