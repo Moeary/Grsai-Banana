@@ -30,7 +30,7 @@ jobs:
 
       - name: Build executable
         run: |
-          python -m nuitka --standalone --onefile --enable-plugin=pyside6 --windows-icon-from-ico=logo.ico --include-data-file=logo.ico=logo.ico --output-dir=dist --remove-output --assume-yes-for-downloads main.py
+          python -m nuitka --standalone --onefile --enable-plugin=pyside6 --windows-console-mode=disable --windows-icon-from-ico=logo.ico --include-data-file=logo.ico=logo.ico --output-dir=dist --remove-output --assume-yes-for-downloads main.py
           Move-Item -Path dist/main.exe -Destination dist/Grsai-Banana-windows-x64.exe -Force
 
       - name: Upload artifact

@@ -17,7 +17,7 @@ class TaskWorker(QThread):
     progress_signal = Signal(int, str)
     finished_signal = Signal(bool, str, str)  # success, result_path/msg, failure_reason
     
-    def __init__(self, prompt, model, ratio, size, ref_urls, task_id=None, variants=1, output_dir=None, filename_prefix=None):
+    def __init__(self, prompt, model, ratio, size, ref_urls, task_id=None, output_dir=None, filename_prefix=None):
         super().__init__()
         self.prompt = prompt
         self.model = model
@@ -25,7 +25,6 @@ class TaskWorker(QThread):
         self.size = size
         self.ref_urls = ref_urls
         self.task_id = task_id
-        self.variants = variants
         self.output_dir = output_dir
         self.filename_prefix = filename_prefix
         self.is_running = True
@@ -35,7 +34,7 @@ class TaskWorker(QThread):
         try:
             if not self.task_id:
                 try:
-                    res = api.submit_task(self.prompt, self.model, self.ratio, self.size, self.ref_urls, self.variants)
+                    res = api.submit_task(self.prompt, self.model, self.ratio, self.size, self.ref_urls)
                     if res.get("code") != 0:
                         self.finished_signal.emit(False, res.get("msg", "Submission failed"), "Submission failed")
                         return
@@ -100,7 +99,6 @@ class TaskWorker(QThread):
                     if status == "succeeded":
                         results = data.get("results", [])
                         if results:
-                            # Handle multiple images (variants)
                             downloaded_files = []
                             first_file = None
                             
@@ -123,12 +121,9 @@ class TaskWorker(QThread):
                                     prefix = (self.filename_prefix or "").strip()
                                     base_stem = f"{prefix}_{timestamp}" if prefix else timestamp
                                     
-                                    # Generate filename with conflict resolution
                                     if len(results) > 1:
-                                        # Multiple images from variants - use variant index
                                         filename = f"{base_stem}_{idx + 1}.{ext}"
                                     else:
-                                        # Single image - check for conflicts with other concurrent tasks
                                         base_filename = f"{base_stem}.{ext}"
                                         filepath = os.path.join(output_dir, base_filename)
                                         
@@ -199,7 +194,7 @@ class TaskManager:
     def __init__(self):
         self.active_workers = {}  # task_widget -> worker
     
-    def create_worker(self, prompt, model, ratio, size, ref_urls, variants=1, output_dir=None, filename_prefix=None):
+    def create_worker(self, prompt, model, ratio, size, ref_urls, output_dir=None, filename_prefix=None):
         """Create and return a new TaskWorker"""
         worker = TaskWorker(
             prompt,
@@ -207,7 +202,6 @@ class TaskManager:
             ratio,
             size,
             ref_urls,
-            variants=variants,
             output_dir=output_dir,
             filename_prefix=filename_prefix,
         )

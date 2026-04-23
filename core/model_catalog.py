@@ -26,6 +26,25 @@ GPT_IMAGE_MODELS = [
     "gpt-image-2",
 ]
 
+GPT_IMAGE_SIZE_OPTIONS = [
+    "auto",
+    "1:1",
+    "16:9",
+    "9:16",
+    "4:3",
+    "3:4",
+    "3:2",
+    "2:3",
+    "5:4",
+    "4:5",
+    "21:9",
+    "9:21",
+    "1:3",
+    "3:1",
+    "2:1",
+    "1:2",
+]
+
 LEGACY_IMAGE_MODEL_ALIASES = {
     "gpt-image-1.5": "gpt-image-2",
     "sora-image": "gpt-image-2",
