@@ -44,11 +44,6 @@ class TaskWidget(QFrame):
         self.status_label = BodyLabel("Attempt: 1")
         layout.addWidget(self.status_label, 1)
         
-        # Add variants info label (for GPT Image models)
-        self.variants_label = BodyLabel("")
-        self.variants_label.hide()
-        layout.addWidget(self.variants_label)
-        
         self.status_stack = QStackedWidget()
         self.status_stack.setFixedSize(50, 50)
         
@@ -104,17 +99,6 @@ class TaskWidget(QFrame):
         self.status_text = status
         self.status_label.setText(f"Attempt {self.attempt_count + 1}: {status}")
         self.progress_ring.setToolTip(f"Status: {status}")
-    
-    def set_variants_info(self, variants_count, total_images=None):
-        """Display variants information"""
-        if variants_count > 1:
-            if total_images:
-                self.variants_label.setText(f"Variants: {variants_count} | Total Images: {total_images}")
-            else:
-                self.variants_label.setText(f"Variants: {variants_count}")
-            self.variants_label.show()
-        else:
-            self.variants_label.hide()
         
     def set_success(self, filepath):
         self.result_path = filepath

@@ -37,15 +37,13 @@ from core.model_catalog import (
     CHAT_MODELS,
     COMIC_IMAGE_MODELS,
     COMPLETION_MODELS,
+    GPT_IMAGE_SIZE_OPTIONS,
     LEGACY_IMAGE_MODEL_ALIASES,
     NANO_IMAGE_SIZE_OPTIONS,
 )
 from core.task_manager import task_manager
 from ui.components.image_drop_area import ImageDropArea
 from ui.components.task_widget import TaskListWidget, TaskWidget
-
-
-GPT_IMAGE_SIZE_OPTIONS = ["auto", "1:1", "3:2", "2:3"]
 
 
 def _parse_reference_targets(text):
@@ -497,6 +495,7 @@ class ComicPage(QWidget):
 
         self.ratio_label.setVisible(not is_completion)
         self.ratio_combo.setVisible(not is_completion)
+        self.size_label.setText(tr("comic.gpt_size") if is_completion else tr("comic.image_size"))
 
         size_options = GPT_IMAGE_SIZE_OPTIONS if is_completion else NANO_IMAGE_SIZE_OPTIONS.get(model_name)
         has_size_options = bool(size_options)
@@ -748,7 +747,6 @@ class ComicPage(QWidget):
             "ratio": ratio,
             "size": size,
             "ref_urls": [path for path in self.drop_area.image_paths if os.path.isfile(path)],
-            "variants": 1,
             "page_number": page_number,
             "output_dir": self._project_pages_dir(),
             "filename_prefix": f"page_{page_number:02d}",
@@ -798,7 +796,6 @@ class ComicPage(QWidget):
                 task_widget.params["ratio"],
                 task_widget.params["size"],
                 task_widget.params["ref_urls"],
-                variants=task_widget.params.get("variants", 1),
                 output_dir=task_widget.params.get("output_dir"),
                 filename_prefix=task_widget.params.get("filename_prefix"),
             )

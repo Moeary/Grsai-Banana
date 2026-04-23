@@ -11,6 +11,7 @@ from core.model_catalog import (
     TAB_BANANA_1,
     TAB_BANANA_PRO,
     TAB_GPT_IMAGE,
+    GPT_IMAGE_SIZE_OPTIONS,
     TAB_MODELS,
     NANO_IMAGE_SIZE_OPTIONS,
     VIP_MODELS,
@@ -96,20 +97,12 @@ class GeneratorPage(QWidget):
         self.size_combo.addItems(["1K", "2K", "4K"])
         self.size_combo.setCurrentText(cfg.get("nano_banana_image_size", "1K"))
         settings_inner.addWidget(self.size_combo)
-        
-        # Variants (GPT)
-        self.variants_label = CaptionLabel(tr("generator.variants"))
-        settings_inner.addWidget(self.variants_label)
-        self.variants_combo = ComboBox()
-        self.variants_combo.addItems(["1", "2"])
-        self.variants_combo.setCurrentText("1")
-        settings_inner.addWidget(self.variants_combo)
 
         # Size (GPT)
         self.gpt_size_label = CaptionLabel(tr("generator.gpt_size"))
         settings_inner.addWidget(self.gpt_size_label)
         self.gpt_size_combo = ComboBox()
-        self.gpt_size_combo.addItems(["auto", "1:1", "3:2", "2:3"])
+        self.gpt_size_combo.addItems(GPT_IMAGE_SIZE_OPTIONS)
         self.gpt_size_combo.setCurrentText(cfg.get("gpt_image_size", "auto"))
         settings_inner.addWidget(self.gpt_size_combo)
         
@@ -352,9 +345,6 @@ class GeneratorPage(QWidget):
                 selected_size = size_options[0]
             self._set_combo_items(self.size_combo, size_options, selected_size)
 
-        self.variants_label.setVisible(is_completion)
-        self.variants_combo.setVisible(is_completion)
-
         self.gpt_size_label.setVisible(is_completion)
         self.gpt_size_combo.setVisible(is_completion)
 
@@ -374,7 +364,6 @@ class GeneratorPage(QWidget):
         # Get params based on active model
         ratio = "auto"
         size = "1K"
-        variants = 1
 
         if self._is_nano_model(model):
             ratio = self.ratio_combo.currentText()
@@ -384,21 +373,10 @@ class GeneratorPage(QWidget):
                 size = self.size_combo.currentText()
                 cfg.set("nano_banana_image_size", size)
         elif self._is_completion_model(model):
-            variants = int(self.variants_combo.currentText())
             size = self.gpt_size_combo.currentText()
             cfg.set("gpt_image_size", size)
 
         parallel_count = self.parallel_slider.value()
-        
-        # For GPT Image variants, warn about parallel execution
-        if self._is_completion_model(model) and variants > 1 and parallel_count > 1:
-            InfoBar.warning(
-                title=tr("common.note"), 
-                content=tr("generator.parallel_note", variants=variants),
-                parent=self, 
-                position=InfoBarPosition.TOP_RIGHT
-            )
-            parallel_count = 1
         
         cfg.set("auto_retry_on_failure", self.auto_retry_cb.isChecked())
         cfg.set("parallel_tasks", parallel_count)
@@ -413,7 +391,6 @@ class GeneratorPage(QWidget):
             "ratio": ratio,
             "size": size,
             "ref_urls": ref_urls,
-            "variants": variants
         }
         
         for _ in range(parallel_count):
@@ -424,11 +401,6 @@ class GeneratorPage(QWidget):
         task_widget = TaskWidget(self.task_counter, prompt, params)
         task_widget.auto_retry = self.auto_retry_cb.isChecked()
         
-        # Show variants info for GPT Image models
-        variants = params.get("variants", 1)
-        if variants > 1:
-            task_widget.set_variants_info(variants)
-        
         task_widget.retry_requested.connect(self.retry_task)
         task_widget.regenerate_requested.connect(self.regenerate_task)
         
@@ -437,14 +409,12 @@ class GeneratorPage(QWidget):
 
     def start_worker(self, task_widget):
         try:
-            variants = task_widget.params.get("variants", 1)
             worker = task_manager.create_worker(
                 task_widget.prompt, 
                 task_widget.params["model"], 
                 task_widget.params["ratio"], 
                 task_widget.params["size"], 
-                task_widget.params["ref_urls"],
-                variants=variants
+                task_widget.params["ref_urls"]
             )
             
             task_widget.progress_ring.show()

@@ -7,6 +7,7 @@ from core.model_catalog import (
     NANO_MODELS,
     NANO_IMAGE_SIZE_OPTIONS,
     COMPLETION_MODELS,
+    GPT_IMAGE_SIZE_OPTIONS,
     LEGACY_IMAGE_MODEL_ALIASES,
 )
 
@@ -101,7 +102,7 @@ class ApiClient:
         except Exception as e:
             return {"error": {"message": str(e)}}
 
-    def submit_task(self, prompt, model, aspect_ratio="auto", image_size="1K", ref_image_urls=None, variants=1):
+    def submit_task(self, prompt, model, aspect_ratio="auto", image_size="1K", ref_image_urls=None):
         """Submit task to appropriate API based on model"""
         model = self._normalize_model(model)
 
@@ -121,7 +122,7 @@ class ApiClient:
         if model in NANO_MODELS:
             return self._submit_nano_banana(prompt, model, aspect_ratio, image_size, ref_image_urls)
         elif model in COMPLETION_MODELS or model in self.LEGACY_COMPLETION_MODELS:
-            return self._submit_gpt_image(prompt, model, image_size, ref_image_urls, variants)
+            return self._submit_gpt_image(prompt, model, image_size, ref_image_urls)
         else:
             return {"code": -1, "msg": f"Unknown model: {model}"}
 
@@ -150,15 +151,14 @@ class ApiClient:
         except requests.exceptions.RequestException as e:
             return {"code": -1, "msg": str(e)}
 
-    def _submit_gpt_image(self, prompt, model, size, ref_image_urls, variants):
+    def _submit_gpt_image(self, prompt, model, size, ref_image_urls):
         """Submit to GPT Image API"""
         url = f"{self._get_base_url().rstrip('/')}/v1/draw/completions"
         
         payload = {
             "model": model,
             "prompt": prompt,
-            "size": size if size in ["auto", "1:1", "3:2", "2:3"] else "1:1",
-            "variants": variants,
+            "size": size if size in GPT_IMAGE_SIZE_OPTIONS else "auto",
             "webHook": "-1",  # Use -1 to get ID immediately for polling
             "shutProgress": False
         }
